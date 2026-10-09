@@ -33,7 +33,7 @@ dsh plugin --profile <profile> add github:Arun1016/dsh-cost
 ## 2. 推送本地提交
 
 ```sh
-cd C:\Users\Administrator\.dsh\plugins\dsh-cost-stats
+cd <本插件目录>
 git remote add origin https://github.com/Arun1016/dsh-cost.git
 git push -u origin main
 ```
