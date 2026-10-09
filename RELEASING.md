@@ -3,7 +3,19 @@
 本插件（`dsh-cost`）要进 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
 精选列表，才可能被 dsh 的插件市场搜到并一键安装。市场**只允许安装该列表内的来源**。
 
-本地这一步已经做完：仓库已 `git init` 并完成首次提交（`main` 分支，35 个文件）。
+本地这一步已经做完：仓库已 `git init` 并完成提交（`main` 分支，38 个文件）。
+
+---
+
+## 进度（2026-10-09）
+
+- [x] 1. 创建 GitHub 仓库 —— <https://github.com/Arun1016/dsh-cost>（创建于 2026-10-09T11:39:10Z）
+- [x] 2. 推送 `main` 与 tag `v1.0.0`
+- [x] 3. 添加 `dsh-plugin` topic（另有 `dsh`、`deepseek-harness`、`cost`、`balance`）
+- [x] 4. 创建 Release `v1.0.0` 并上传 `dsh-cost-1.0.0.tgz`
+  - <https://github.com/Arun1016/dsh-cost/releases/tag/v1.0.0>
+  - 素材：<https://github.com/Arun1016/dsh-cost/releases/download/v1.0.0/dsh-cost-1.0.0.tgz>
+- [ ] 5. 提交收录 PR（**须等仓库创建满 1 天**，即 2026-10-10 11:39Z 之后）
 
 ---
 
