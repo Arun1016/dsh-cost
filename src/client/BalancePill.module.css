@@ -1,0 +1,152 @@
+/* Cost-statistics pill: pill chrome mirroring ui-chat's StatsPills row metrics
+   (the dock lays both out as centered flex children with the same gap), plus
+   the stat-dialog panel skin. Tokens only — no literal colors. */
+
+.anchor {
+  display: inline-flex;
+  min-width: 0;
+  /* The official row's metrics: without them the dock would size this pill at
+     the composer's inherited font instead of the stat row's tier. */
+  font-size: calc(var(--dsh-content-font-size-secondary, 13px) - 1px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: 1px 8px;
+  border: none;
+  border-radius: 24px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  line-height: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pill svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.pill:hover,
+.pill[aria-expanded='true'] {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.period {
+  display: inline;
+}
+
+/* Peak reads expensive (red), off-peak cheap (green): the state tokens the
+   official price rules imply, never literal colors. */
+.periodDot {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.12em;
+  border-radius: 50%;
+  vertical-align: -0.17em;
+  background: var(--dsw-alias-state-success-primary);
+}
+
+.peak {
+  background: var(--dsw-alias-state-error-primary);
+}
+
+.sep {
+  color: var(--dsw-alias-separator-primary);
+  margin: 0 2px;
+}
+
+.modelsTitle {
+  margin-bottom: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-weight: 500;
+}
+
+/* Panel skin copied from ui-chat's stat-dialog.module.css so this pill's dialog
+   matches the official stat pills' surface exactly. */
+.panel {
+  position: fixed;
+  z-index: 1100;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: min(300px, calc(100vw - 24px));
+  max-width: min(440px, calc(100vw - 24px));
+  padding: 16px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--dsw-specific-menu);
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
+  box-shadow: var(--dsw-elevation-prominent);
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: default;
+}
+
+.title {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}
+
+.titleLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.titleLabel svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.titleRule {
+  margin-bottom: 10px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.details {
+  display: grid;
+  grid-template-columns: minmax(76px, auto) minmax(0, 1fr);
+  gap: 6px 16px;
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.details dt,
+.details dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.details dd {
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.details .route {
+  overflow-wrap: anywhere;
+}

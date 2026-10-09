@@ -1,0 +1,6 @@
+# dsh 组合包补丁:把本插件的宿主半边挂进某个 profile。
+# 客户端半边是清单里 `dsh.client` 声明的浏览器行,由模块清单扫描后装载,
+# 因此这里只插入宿主那一行。
+- insert:
+    - id: cost-stats
+      name: 'dsh-cost'
