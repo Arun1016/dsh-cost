@@ -23,8 +23,10 @@
 在插件市场搜索 `dsh-cost` 一键安装，或命令行：
 
 ```sh
-dsh plugin --profile <profile> add dsh-cost
+dsh plugin --profile <profile> add github:Arun1016/dsh-cost
 ```
+
+> **请用上面这条 `github:` 来源安装。** npm 上另有一个同名 `dsh-cost` 包（他人所写、与本插件无关），`dsh plugin add dsh-cost` 装到的会是那一个。
 
 ## 配置
 
