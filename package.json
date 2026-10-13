@@ -1,6 +1,6 @@
 {
   "name": "dsh-cost",
-  "description": "Real-time DeepSeek account balance and per-session cost pill for DeepSeek Harness (dsh): official peak/off-peak pricing, per-model breakdown, no credentials stored.",
+  "description": "DeepSeek account balance and per-session cost pill for DeepSeek Harness (dsh): official peak/off-peak pricing, per-model breakdown, no credentials stored.",
   "version": "1.0.0",
   "type": "module",
   "main": "lib/index.js",
@@ -37,6 +37,7 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-credentials": ">=0.2.0-rc.2 <0.3.0",
     "@deepseek-ai/schemastery": "^3.18.1"
   },
   "dsh": {
