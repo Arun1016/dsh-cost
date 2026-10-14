@@ -1,8 +1,14 @@
 # dsh-cost
 
-**Account balance** and **per-session cost** pill for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web GUI. It adds one more pill next to the built-in clock and token pills above the composer — billing period dot · balance · session cost — and opens a breakdown when clicked. The cost side needs no credentials; the balance side needs a DeepSeek API key.
+**Account balance** and **per-session cost** pill for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web GUI. It adds one more pill to the composer's stats row, next to the built-in clock and token pills — billing period dot · balance · session cost — and opens a breakdown when clicked. The cost side needs no credentials; the balance side needs a DeepSeek API key.
 
 > Community plugin. Not affiliated with, endorsed by, or shipped by DeepSeek.
+
+## Screenshots
+
+![Cost pill in the composer stats row](assets/screenshots/pill.png)
+
+![Breakdown popup](assets/screenshots/dialog.png)
 
 ## Features
 

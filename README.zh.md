@@ -1,8 +1,14 @@
 # dsh-cost
 
-[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web 界面的**账户余额 + 会话费用**胶囊。它在输入框上方、官方时间与 token 两颗胶囊的同一行多显示一颗：计费时段圆点 · 余额 · 会话费用，点开可看明细。费用部分不需要任何凭据；余额部分需要一个 DeepSeek API key。
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web 界面的**账户余额 + 会话费用**胶囊。它在输入框下方的统计行里、与官方时间与 token 两颗胶囊同一行多显示一颗：计费时段圆点 · 余额 · 会话费用，点开可看明细。费用部分不需要任何凭据；余额部分需要一个 DeepSeek API key。
 
 > 社区插件，与 DeepSeek 官方无隶属关系，也不由官方随包分发。
+
+## 截图
+
+![输入框下方统计行里的费用胶囊](assets/screenshots/pill.png)
+
+![点开后的明细弹窗](assets/screenshots/dialog.png)
 
 ## 功能
 
