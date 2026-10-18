@@ -12,16 +12,20 @@
 
 ## Features
 
-- **Pill** in the `conversation.composer.dock` slot (`id: cost-stats`, `order: 1`), on the same row as the official clock and token pills. The period reads `Peak` or `Off-peak`, matching the plugin's own dictionaries.
+- **Rightmost pill**: registers into the `conversation.composer.dock` list with `order: 2`, after both official pills (`activity` = 0, `usage` = 1). The period reads `Peak` / `Off-peak` from the plugin's own dictionaries.
 - **Popup breakdown**: billing period, account balance, current session cost, and the cost split by bucket — cache-hit input / cache-miss input (cache writes included) / output — plus a per-model breakdown whenever the host can fold one.
 - **Official pricing**: the 2026-09-10 price cut and the pro→flash routing are both modelled. While the session is attached, usage is folded per request, so a session spanning a price change, a routing change or a peak boundary never mixes two rate tables.
+- **Peak/off-peak clock**: workday windows `09:00–12:00` and `14:00–18:00`; weekends and statutory holidays bill off-peak all day. The built-in 2026 PRC holiday table can be replaced through `Config.holidays`.
 - **Works without an API key**: the billing period and the session cost still render; only the balance segment is missing.
-- **No credentials stored**: the key is used in-process only and never written to disk.
-- Positioning and dismiss behaviour reuse the official `ui-primitives` helpers (`useAnchoredPosition`, `useDismissOnOutsidePointer`).
+- **No credentials stored**: the key is resolved through dsh's credentials seam, used in-process, and never written to disk.
+- **Bilingual**: 14 dictionary entries under the `cost-stats` namespace, Chinese and English, following the app locale.
+- **Host route only**: the browser half reads `/api/dsh-balance` (once per session step plus a 60 s poll) and never contacts a third party.
+- **No local state**: nothing is persisted; uninstalling leaves no data behind.
+- **Native behaviour**: positioning and outside-dismiss reuse the official `ui-primitives` helpers (`useAnchoredPosition`, `useDismissOnOutsidePointer`).
 
 ## Requirements
 
-- DeepSeek Harness (dsh) `>= 0.2.0-rc.2`.
+- DeepSeek Harness (dsh) `>= 0.2.1-rc.2`.
 - A DeepSeek **API key** if you want the balance. It is resolved through dsh's credentials seam; the plugin falls back to the `DEEPSEEK_API_KEY` environment variable **only when the credentials service itself is unavailable** — if credentials exists but holds no such key, the environment variable is not consulted. When no key resolves (for example an install signed in with a DeepSeek *account*), the pill keeps showing the billing period and the session cost, and only the balance is absent.
 
 ## Install

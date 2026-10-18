@@ -12,16 +12,20 @@
 
 ## 功能
 
-- **胶囊**：注册在 `conversation.composer.dock` 槽位（`id: cost-stats`、`order: 1`），与官方胶囊同排。时段文字为「高峰 / 低谷」，与本插件自己的词典一致。
+- **最右侧的胶囊**：以 `order: 2` 注册进 `conversation.composer.dock` 列表，排在两颗官方胶囊（`activity` = 0、`usage` = 1）之后。时段文字为「高峰 / 低谷」，来自插件自己的词典。
 - **弹窗明细**：计费时段、账户余额、本次会话费用，以及按桶拆分的**金额**——输入（缓存命中）/ 输入（缓存未命中，含缓存写入）/ 输出；宿主能按模型折算时还会列出各模型明细。
 - **与官方一致的口径**：2026-09-10 降价与 pro→flash 路由都已建模；**会话处于挂载状态时**按请求逐一折算，跨越降价、路由切换或高峰边界的用量各自沿用当时的价目表。
+- **高峰/低谷时钟**：工作日 `09:00–12:00`、`14:00–18:00` 为高峰；周末与法定节假日全天低谷。内建的 2026 年法定节假日表可通过 `Config.holidays` 替换。
 - **没有 API key 也能用**：计费时段与会话费用照常显示，只缺余额部分。
-- **不保存凭据**：key 只在进程内使用，不写磁盘。
-- 定位与关闭行为复用官方 `ui-primitives` 的 `useAnchoredPosition`、`useDismissOnOutsidePointer`。
+- **不保存凭据**：key 通过 dsh 的 credentials seam 解析，只在进程内使用，不写磁盘。
+- **中英双语**：`cost-stats` 命名空间下 14 个词条，中文与英文各一套，随应用 locale 切换。
+- **只读宿主路由**：浏览器半边只请求 `/api/dsh-balance`（每个会话步一次，另有 60 秒轮询），从不访问第三方端点。
+- **无本地状态**：不持久化任何数据，卸载后不残留。
+- **原生交互**：定位与外部点击关闭复用官方 `ui-primitives` 的 `useAnchoredPosition`、`useDismissOnOutsidePointer`。
 
 ## 运行要求
 
-- DeepSeek Harness (dsh) `>= 0.2.0-rc.2`。
+- DeepSeek Harness (dsh) `>= 0.2.1-rc.2`。
 - 想看到**账户余额**，需要一个 DeepSeek **API key**。它通过 dsh 的 credentials seam 解析；**只有当 credentials 服务本身不可用时**，插件才回退读 `DEEPSEEK_API_KEY` 环境变量——如果 credentials 服务存在但里面没有这个 key，不会去读环境变量。解析不到 key 时（例如只用 DeepSeek **账户登录**、没配 API key 的安装），胶囊仍显示计费时段与会话费用，只是没有余额。
 
 ## 安装

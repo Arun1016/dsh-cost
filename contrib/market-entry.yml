@@ -2,6 +2,6 @@ url: https://github.com/Arun1016/dsh-cost
 name: Arun1016/dsh-cost
 category: usage
 description:
-  en: 'Balance and cost pill in the composer dock: the current session cost, plus the DeepSeek account balance when an API key is configured. Official peak/off-peak pricing, with a per-model breakdown while the session is attached.'
-  zh: '输入框下方统计行里的余额与费用胶囊：显示本次会话花费，并在配置 API key 后显示 DeepSeek 账户余额；按官方高峰/低谷价目计费，会话挂载时附逐模型明细。'
-tarball: https://github.com/Arun1016/dsh-cost/releases/download/v1.0.0/dsh-cost-1.0.0.tgz
+  en: 'Cost and balance pill as the rightmost entry in the composer stats row: current-session cost, optional DeepSeek account balance, official peak/off-peak pricing folded per request across the 2026-09-10 price cut and the pro-to-flash routing, a built-in statutory-holiday calendar, and a popup breakdown by bucket and model.'
+  zh: '输入框下方统计行最右侧的费用与余额胶囊：本次会话花费、配置 API key 后的 DeepSeek 账户余额、按官方高峰/低谷价目逐请求折算（含 2026-09-10 降价与 pro→flash 路由）、内建法定节假日表，以及按桶与按模型拆分的明细弹窗。'
+tarball: https://github.com/Arun1016/dsh-cost/releases/latest/download/dsh-cost.tgz

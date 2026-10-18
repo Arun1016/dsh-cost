@@ -41,7 +41,7 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
     name: 'conversation.composer.dock',
     id: 'cost-stats',
-    order: 1,
+    order: 2,
     locale: NS,
   }, BalancePill))
 }
