@@ -1,25 +1,26 @@
 # dsh-cost
 
-**Account balance** and **per-session cost** pill for the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web GUI. It adds one more pill to the composer's stats row, next to the built-in clock and token pills — billing period dot · balance · session cost — and opens a breakdown when clicked. The cost side needs no credentials; the balance side needs a DeepSeek API key.
+**Account balance and cost statistics** pill for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It adds a pill at the right-hand end of the official stats row below the session composer, combining three readings: the billing period (peak / off-peak, colour-coded), the account balance, and the current session cost. Clicking the pill expands a per-session breakdown — cache-hit input, cache-miss input and output amounts, plus cost per model. The cost side needs no credentials; the balance side needs a DeepSeek API key.
 
 > Community plugin. Not affiliated with, endorsed by, or shipped by DeepSeek.
 
 ## Screenshots
 
-![Cost pill in the composer stats row](assets/screenshots/pill.png)
+![Cost pill at the right-hand end of the stats row](assets/screenshots/pill-101c.png)
 
-![Breakdown popup](assets/screenshots/dialog.png)
+![Breakdown popup](assets/screenshots/dialog-101c.png)
 
 ## Features
 
-- **Rightmost pill**: registers into the `conversation.composer.dock` list with `order: 2`, after both official pills (`activity` = 0, `usage` = 1). The period reads `Peak` / `Off-peak` from the plugin's own dictionaries.
-- **Popup breakdown**: billing period, account balance, current session cost, and the cost split by bucket — cache-hit input / cache-miss input (cache writes included) / output — plus a per-model breakdown whenever the host can fold one.
+- **Rightmost pill in the stats row**: registers into `conversation.composer.dock` with `order: 2`, after both official stats pills (`activity` = 0, `usage` = 1). The period reads `Peak` or `Off-peak`, and a red / green dot distinguishes them.
+- **Popup breakdown**: billing period, account balance, current session cost, and the cost split by bucket — cache-hit input, cache-miss input (cache writes included), output — plus a per-model breakdown whenever the host can fold one.
 - **Official pricing**: the 2026-09-10 price cut and the pro→flash routing are both modelled. While the session is attached, usage is folded per request, so a session spanning a price change, a routing change or a peak boundary never mixes two rate tables.
-- **Peak/off-peak clock**: workday windows `09:00–12:00` and `14:00–18:00`; weekends and statutory holidays bill off-peak all day. The built-in 2026 PRC holiday table can be replaced through `Config.holidays`.
-- **Works without an API key**: the billing period and the session cost still render; only the balance segment is missing.
+- **Peak / off-peak clock**: workday windows `09:00–12:00` and `14:00–18:00`; everything else, weekends and statutory holidays bill off-peak all day (including a weekend that holiday adjustment turns into a workday). The built-in 2026 PRC holiday table can be replaced through `Config.holidays`.
+- **Rates follow official pricing**: the rate table ships inside the plugin and is refreshed with plugin releases.
+- **Works without an API key**: installs signed in with a DeepSeek account still see the billing period and the session cost; only the balance is absent.
 - **No credentials stored**: the key is resolved through dsh's credentials seam, used in-process, and never written to disk.
 - **Bilingual**: 14 dictionary entries under the `cost-stats` namespace, Chinese and English, following the app locale.
-- **Host route only**: the browser half reads `/api/dsh-balance` (once per session step plus a 60 s poll) and never contacts a third party.
+- **Host route only**: the browser half reads the host route `/api/dsh-balance` (once per session step plus a 60 s poll) and never contacts a third party.
 - **No local state**: nothing is persisted; uninstalling leaves no data behind.
 - **Native behaviour**: positioning and outside-dismiss reuse the official `ui-primitives` helpers (`useAnchoredPosition`, `useDismissOnOutsidePointer`).
 
