@@ -8,7 +8,7 @@
  *
  * Price, period, and statutory-holiday facts live here, in the owning package:
  * an official change is one edit plus its tests.
- * @module dsh-cost
+ * @module dsh-cost-pill
  */
 import type { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';

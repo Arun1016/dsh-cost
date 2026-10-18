@@ -2,7 +2,7 @@
  * Locale dictionaries of the cost-statistics pill. Keys mirror the pill's
  * three readings (billing period, account balance, session cost) and the
  * dialog's breakdown rows.
- * @module dsh-cost/client/locales
+ * @module dsh-cost-pill/client/locales
  */
 /** Dictionary namespace owned by this plugin. */
 export declare const NS = "cost-stats";

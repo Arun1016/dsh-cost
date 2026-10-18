@@ -1,7 +1,7 @@
 {
-  "name": "dsh-cost",
+  "name": "dsh-cost-pill",
   "description": "DeepSeek account balance and per-session cost pill for DeepSeek Harness (dsh): official peak/off-peak pricing, per-model breakdown, no credentials stored.",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -31,6 +31,14 @@
     "token-usage",
     "billing"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Arun1016/dsh-cost.git"
+  },
+  "homepage": "https://github.com/Arun1016/dsh-cost#readme",
+  "bugs": {
+    "url": "https://github.com/Arun1016/dsh-cost/issues"
+  },
   "license": "MIT",
   "engines": {
     "dsh": ">=0.2.1-rc.2"

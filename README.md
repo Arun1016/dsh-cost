@@ -34,12 +34,12 @@
 From the plugin market (search `dsh-cost`), or from a terminal:
 
 ```sh
-dsh plugin --profile <profile> add github:Arun1016/dsh-cost
+dsh plugin --profile <profile> add dsh-cost-pill
 ```
 
-> **Install it with the `github:` spec above.** An unrelated plugin by a different
-> author is published on npm under the bare name `dsh-cost`; `dsh plugin add dsh-cost`
-> would install that one instead of this one.
+You can also install from the GitHub source: `dsh plugin --profile <profile> add github:Arun1016/dsh-cost`.
+
+> Note: the bare npm name `dsh-cost` belongs to an unrelated project; this plugin is published under the `@arun_1016/` scope, so the two cannot be confused.
 
 ## Configuration
 

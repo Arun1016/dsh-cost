@@ -10,7 +10,7 @@
  * The dialog reuses the ui-primitives anchoring and outside-dismiss helpers the
  * official stat pills use, so its placement and dismissal match them; it cannot
  * share their exclusive-open state, which lives inside ui-chat.
- * @module dsh-cost/client/BalancePill
+ * @module dsh-cost-pill/client/BalancePill
  */
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
 import { NS } from './locales.ts';

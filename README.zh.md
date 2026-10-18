@@ -34,10 +34,12 @@ DeepSeek Harness 的**账户余额及费用统计**胶囊。它在会话输入�
 在插件市场搜索 `dsh-cost` 一键安装，或在终端执行：
 
 ```sh
-dsh plugin --profile <profile> add github:Arun1016/dsh-cost
+dsh plugin --profile <profile> add dsh-cost-pill
 ```
 
-> **请务必使用上面这条 `github:` 来源安装。** npm 上另有一个同名 `dsh-cost` 包（他人所写、与本插件无关），`dsh plugin add dsh-cost` 装到的会是那一个。
+也可以从 GitHub 源码安装：`dsh plugin --profile <profile> add github:Arun1016/dsh-cost`。
+
+> 注意：npm 上的裸名 `dsh-cost` 属于另一个无关项目；本插件发布在 `@arun_1016/` 作用域下，不会装错。
 
 ## 配置
 

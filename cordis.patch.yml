@@ -3,4 +3,4 @@
 # 因此这里只插入宿主那一行。
 - insert:
     - id: cost-stats
-      name: 'dsh-cost'
+      name: 'dsh-cost-pill'
