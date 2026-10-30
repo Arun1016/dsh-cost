@@ -81,33 +81,10 @@ export interface SessionWebCost {
     /** Successful Fetch API requests that returned page content. */
     fetch: SessionWebApiCost;
 }
-/** One descendant subagent session's priced contribution. */
-export interface SessionSubagentItem {
-    /** Child session id. */
-    id: string;
-    /** Label from the child's `subagent/descriptor`, when it has one. */
-    label?: string;
-    /** Usage-carrying steps in this child's own log. */
-    requests: number;
-    /** This child's token cost in CNY (its total minus its web calls). */
-    token: number;
-    /** This child's successful Search and Fetch calls. */
-    web: SessionWebCost;
-    /** This child's token + web cost in CNY. */
-    total: number;
-}
-/** What the session's descendant subagent sessions contributed to its cost. */
+/** How many descendant subagent sessions contributed to the totals. */
 export interface SessionSubagentCost {
-    /** Descendant subagent sessions folded into the totals. */
+    /** Descendant subagent sessions whose own cost is folded into `total`. */
     sessions: number;
-    /** Token and web cost those sessions added, in CNY. */
-    total: number;
-    /** Usage-carrying steps across those sessions. */
-    requests: number;
-    /** Their Search and Fetch call share. */
-    web: SessionWebCost;
-    /** Per-session rows, in lineage order; may be shorter than `sessions` when a log was unreadable. */
-    items: SessionSubagentItem[];
 }
 /** The wire value the client expects for this session's accumulated cost. */
 export interface SessionCost {
@@ -256,27 +233,18 @@ export interface SessionLogSlice {
  *   own web calls.
  */
 export declare function foldSessionLogCost(log: SessionLogSlice, holidays?: ReadonlySet<string>): SessionCost | undefined;
-/** One descendant subagent session priced for the parent's reading. */
-export interface PricedSubagent {
-    /** Child session id. */
-    id: string;
-    /** Human label from the child's `subagent/descriptor`, when present. */
-    label?: string;
-    /** The child's own folded cost. */
-    cost: SessionCost;
-}
 /**
  * Merge one session's own cost with the costs of the subagent sessions it
- * spawned, at any depth. The merged cost keeps the per-model and per-bucket
- * splits additive, records what the subagents contributed, and keeps one row
- * per child so the dialog can show each child's token and web share.
+ * spawned, at any depth. Subagent spend is folded into the existing total,
+ * bucket, web and model fields so the dialog stays one reading; only the
+ * descendant count is kept so the client can annotate the totals.
  * @param own - the root session's own cost, or undefined when it has none.
  * @param subagents - each descendant subagent session's own cost.
  * @param subagentSessions - how many descendant sessions were found; defaults
  *   to the number of priced children and may be larger when a log was unreadable.
  * @returns the combined cost, or undefined when nothing contributed.
  */
-export declare function combineSessionCosts(own: SessionCost | undefined, subagents: readonly PricedSubagent[], subagentSessions?: number): SessionCost | undefined;
+export declare function combineSessionCosts(own: SessionCost | undefined, subagents: readonly SessionCost[], subagentSessions?: number): SessionCost | undefined;
 /** Parse a DeepSeek balance response into the client's account row. */
 export declare function parseBalanceInfo(raw: unknown): BalanceInfo | undefined;
 /**

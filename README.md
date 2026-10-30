@@ -13,14 +13,14 @@
 ## Features
 
 - **Rightmost pill in the stats row**: registers into `conversation.composer.dock` with `order: 2`, after both official stats pills (`activity` = 0, `usage` = 1). The period reads `Peak` or `Off-peak`, and a red / green dot distinguishes them.
-- **Popup breakdown**: billing period, account balance, current session cost, the cost split by bucket — cache-hit input, cache-miss input (cache writes included), output — a per-model breakdown whenever the host can fold one, the session's successful web search / web fetch call counts and fee when it made such calls, and one row per subagent with its token / web / total columns plus its request and web-call counts.
-- **Subagent spend included**: every descendant subagent session (identified by the `origin: subagent` header lineage, including subagents of subagents) has its token usage and web call fees folded into the session's total; each child gets its own row labelled from its `subagent/descriptor`. A user fork is an independent conversation and never counts. Running subagents are read from memory; closed ones are read from their persisted logs through the session-query service and cached.
+- **Popup breakdown**: billing period, account balance, current session cost, the cost split by bucket — cache-hit input, cache-miss input (cache writes included), output — a per-model breakdown whenever the host can fold one, and the session's successful web search / web fetch call counts and fee when it made such calls. Subagent spend is not a separate line: it is folded into every amount above; when subagents exist, the session-cost label reads "(incl. subagents)" and a small note says how many sessions are included.
+- **Subagent spend included**: every descendant subagent session (identified by the `origin: subagent` header lineage, including subagents of subagents) has its token usage and web call fees folded into the existing fields — total, the three token buckets, the web rows and the per-model rows. A user fork is an independent conversation and never counts. Running subagents are read from memory; closed ones are read from their persisted logs through the session-query service and cached.
 - **Official pricing**: the 2026-09-10 price cut and the pro→flash routing are both modelled. While the session is attached, usage is folded per request, so a session spanning a price change, a routing change or a peak boundary never mixes two rate tables. The Search / Fetch call fee follows the official 2026-10-17 notice: ¥5 per 1,000 successful requests (¥0.005 each), with failures, empty searches and timeouts free, billed for DeepSeek Harness server-side tool calls from 2026-11-01 00:00 Beijing on; the plugin prices each call at its own moment and shows calls inside the free period as "Free".
 - **Peak / off-peak clock**: workday windows `09:00–12:00` and `14:00–18:00`; everything else, weekends and statutory holidays bill off-peak all day (including a weekend that holiday adjustment turns into a workday). The built-in 2026 PRC holiday table can be replaced through `Config.holidays`.
 - **Rates follow official pricing**: the rate table ships inside the plugin and is refreshed with plugin releases.
 - **Works without an API key**: installs signed in with a DeepSeek account still see the billing period and the session cost; only the balance is absent.
 - **No credentials stored**: the key is resolved through dsh's credentials seam, used in-process, and never written to disk.
-- **Bilingual**: 26 dictionary entries under the `cost-stats` namespace, Chinese and English, following the app locale.
+- **Bilingual**: 20 dictionary entries under the `cost-stats` namespace, Chinese and English, following the app locale.
 - **Host route only**: the browser half reads the host route `/api/dsh-balance` (once per session step plus a 60 s poll) and never contacts a third party.
 - **No local state**: nothing is persisted; uninstalling leaves no data behind.
 - **Native behaviour**: positioning and outside-dismiss reuse the official `ui-primitives` helpers (`useAnchoredPosition`, `useDismissOnOutsidePointer`).
@@ -74,7 +74,7 @@ Model prices are CNY per million tokens, and every figure below is a **peak** ra
 | Call counting | the session log's `web_search` / `web_fetch` tool calls; one multi-query `web_search` counts its distinct queries |
 | Scope | the session's own events (excluding any fork-inherited prefix) plus the own events of every descendant subagent session it spawned |
 | Subagent identification | header lineage carrying `origin: subagent`, at any depth; a user fork is an independent conversation and never counts |
-| Subagent columns | one row per subagent with Token / Web / Total columns, plus that session's request and search/fetch counts |
+| Subagent annotation | with subagents, the session-cost label reads "(incl. subagents)" and a small note names how many sessions are included; their cost is never a separate line, it is folded into the amounts above |
 
 The Search / Fetch price and billing start come from the official [price page](https://api-docs.deepseek.com/zh-cn/quick_start/pricing) and the [web search & fetch guide](https://api-docs.deepseek.com/zh-cn/guides/search) (announced 2026-10-17).
 
