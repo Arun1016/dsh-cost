@@ -136,6 +136,17 @@ function formatAmount(yuan: number): string {
   return yuan.toFixed(2)
 }
 
+/**
+ * Format a Search / Fetch call fee. One successful request costs ¥0.005, so
+ * three decimals are exact; two-decimal rounding would misreport odd call
+ * counts (three calls are ¥0.015, not ¥0.01).
+ * @param yuan - the fee in CNY.
+ * @returns the display string.
+ */
+function formatWebAmount(yuan: number): string {
+  return yuan.toFixed(3)
+}
+
 export const BalancePill = memo(function BalancePill({ useProjection, sessionId, t }: BalancePillProps) {
   const usage = useProjection('tokenUsage')
   const [open, setOpen] = useState(false)
@@ -277,7 +288,7 @@ export const BalancePill = memo(function BalancePill({ useProjection, sessionId,
   // count but read as free rather than as an oddly rounded ¥0.00.
   const webAmount = (api: WebApiCost): string => api.calls > 0 && api.amount === 0
     ? t('balance.dialog.webFree')
-    : amount(api.amount)
+    : t('balance.amount', { amount: formatWebAmount(api.amount) })
   const separator = <span className={css.sep} aria-hidden>·</span>
   const labelText = [periodText, balanceText, costText].filter(part => part !== null).join(' · ')
 

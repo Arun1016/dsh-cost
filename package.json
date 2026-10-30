@@ -1,7 +1,7 @@
 {
   "name": "dsh-cost-pill",
   "description": "DeepSeek account balance and per-session cost pill for DeepSeek Harness (dsh): official peak/off-peak token pricing, web search/fetch per-request fees, per-model breakdown, no credentials stored.",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",

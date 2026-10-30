@@ -399,6 +399,11 @@ function toolResultText(message: { content?: unknown }): string {
  * bills nothing. One `web_fetch` call issues one Fetch API request and bills
  * when the page came back. Each request is priced at its own result moment, so
  * a session spanning the 2026-11-01 billing start bills only its later calls.
+ *
+ * The log is append-only and may carry several results for one call when the
+ * tool-result pruner replaces content later; the first result carries the
+ * request's real outcome and moment, so every call is counted at most once and
+ * a replacement never adds a fee.
  * @param session - the live session whose log is folded.
  * @returns billable call counts and amounts per API; both zero without web calls.
  */
@@ -406,6 +411,7 @@ export function foldSessionWebCost(session: Session): SessionWebCost {
   const search: SessionWebApiCost = { calls: 0, amount: 0 }
   const fetch: SessionWebApiCost = { calls: 0, amount: 0 }
   const calls = new Map<string, WebToolCall>()
+  const results = new Map<string, { message: { toolCallId: string; isError?: unknown; content?: unknown }; time: number }>()
   for (const event of session.snapshotEvents() as unknown as WebLogEvent[]) {
     if (event.type === 'tool/call') {
       const data = event.data as { name?: unknown; callId?: unknown; arguments?: unknown }
@@ -422,12 +428,21 @@ export function foldSessionWebCost(session: Session): SessionWebCost {
       message?: { toolCallId?: unknown; isError?: unknown; content?: unknown }
     }).message
     if (message === undefined || typeof message.toolCallId !== 'string') continue
-    const call = calls.get(message.toolCallId)
-    if (call === undefined) continue
+    // A later replacement is content pruning, not a second request: keep the
+    // first result's outcome and moment and ignore every replacement.
+    if (results.has(message.toolCallId)) continue
+    results.set(message.toolCallId, {
+      message: message as { toolCallId: string; isError?: unknown; content?: unknown },
+      time: event.time,
+    })
+  }
+  for (const [callId, call] of calls) {
+    const result = results.get(callId)
+    if (result === undefined) continue
     // A failed tool call billed nothing: the provider dispatch failed, or the
     // call was cancelled before the request settled.
-    if (message.isError === true) continue
-    const price = webCallPriceYuan(event.time)
+    if (result.message.isError === true) continue
+    const price = webCallPriceYuan(result.time)
     if (call.name === WEB_FETCH_TOOL) {
       fetch.calls += 1
       fetch.amount += price
@@ -435,7 +450,7 @@ export function foldSessionWebCost(session: Session): SessionWebCost {
     }
     // The Search API bills only requests whose `results` array is non-empty;
     // the tool renders that case as the literal "No results found." marker.
-    if (toolResultText(message).includes('No results found.')) continue
+    if (toolResultText(result.message).includes('No results found.')) continue
     const requests = call.queries.length
     if (requests === 0) continue
     search.calls += requests

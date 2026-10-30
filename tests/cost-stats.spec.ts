@@ -265,13 +265,14 @@ describe('foldSessionWebCost', () => {
   }
 
   function appendWebCall(session: Session, call: WebEvent, callId: string): void {
+    // `tool/call` is not surface-eligible: it takes no surface metadata.
     session.append('tool/call', {
       turn: 1,
       step: 1,
       callId,
       name: call.name,
       arguments: JSON.stringify(call.arguments ?? {}),
-    } as never, { surfaceOp: 'append' })
+    } as never)
     session.append('tool/result', {
       turn: 1,
       step: 1,
@@ -331,6 +332,40 @@ describe('foldSessionWebCost', () => {
     const cost = foldSessionWebCost(session)
     expect(cost.fetch.calls).toBe(2)
     expect(cost.fetch.amount).toBeCloseTo(2 * resultPrice(session), 9)
+  })
+
+  it('counts a call once when the log replaces its result', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    const session = ctx.sessions.create(SessionId('web-replaced'))
+    const callId = 'replaced-fetch'
+    session.append('tool/call', {
+      turn: 1,
+      step: 1,
+      callId,
+      name: 'web_fetch',
+      arguments: JSON.stringify({ url: 'https://a.example' }),
+    } as never)
+    const originalSeq = session.seq
+    const resultMessage = {
+      id: 'tool-replaced',
+      role: 'tool',
+      source: { kind: 'tool', callId },
+      toolCallId: callId,
+      content: [{ type: 'text', text: 'Fetched https://a.example (HTTP 200)' }],
+      isError: false,
+    }
+    session.append('tool/result', { turn: 1, step: 1, message: resultMessage } as never, { surfaceOp: 'append' })
+    session.append('tool/result', {
+      turn: 1,
+      step: 1,
+      message: { ...resultMessage, content: [{ type: 'text', text: '[pruned result]' }] },
+    } as never, { surfaceOp: { op: 'replace', startSeq: originalSeq, endSeq: originalSeq }, sourceEventSeqs: [originalSeq] } as never)
+    const cost = foldSessionWebCost(session)
+    expect(cost.fetch.calls).toBe(1)
+    expect(cost.fetch.amount).toBeCloseTo(resultPrice(session), 9)
+    await ctx.fiber.dispose()
   })
 
   it('adds web fees to the session total and exposes the split', async () => {

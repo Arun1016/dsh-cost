@@ -199,6 +199,11 @@ export declare function webSearchQueries(raw: unknown): string[];
  * bills nothing. One `web_fetch` call issues one Fetch API request and bills
  * when the page came back. Each request is priced at its own result moment, so
  * a session spanning the 2026-11-01 billing start bills only its later calls.
+ *
+ * The log is append-only and may carry several results for one call when the
+ * tool-result pruner replaces content later; the first result carries the
+ * request's real outcome and moment, so every call is counted at most once and
+ * a replacement never adds a fee.
  * @param session - the live session whose log is folded.
  * @returns billable call counts and amounts per API; both zero without web calls.
  */
