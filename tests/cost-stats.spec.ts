@@ -13,7 +13,9 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import {
   apply,
   canonicalModel,
+  combineSessionCosts,
   foldSessionCost,
+  foldSessionLogCost,
   foldSessionWebCost,
   isPeakPeriod,
   parseBalanceInfo,
@@ -23,6 +25,7 @@ import {
   sessionCostYuan,
   webCallPriceYuan,
   type ModelPrices,
+  type SessionCost,
 } from '../src/index.ts'
 
 const contexts: Context[] = []
@@ -435,6 +438,116 @@ describe('parseBalanceInfo', () => {
     expect(parseBalanceInfo({})).toBeUndefined()
     expect(parseBalanceInfo({ balance_infos: [] })).toBeUndefined()
     expect(parseBalanceInfo({ balance_infos: [{ currency: 'CNY' }] })).toBeUndefined()
+  })
+})
+
+describe('foldSessionLogCost', () => {
+  // Monday 2026-09-21 10:00 Beijing is peak; flash-after-cut prices are 2 / 8.
+  const time = Date.parse('2026-09-21T10:00:00+08:00')
+
+  function assistant(): unknown {
+    return {
+      type: 'assistant/message',
+      time,
+      data: {
+        message: { source: { kind: 'model', model: 'deepseek-flash' } },
+        usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
+      },
+    }
+  }
+
+  it('excludes the inherited prefix a fork already billed to the parent', () => {
+    const events = [assistant(), assistant()]
+    // 1M input + 1M output at 2 + 8 = ¥10 per own request.
+    expect(foldSessionLogCost({ events, inheritedEventCount: 0 })?.total).toBeCloseTo(20, 9)
+    // A persisted fork inherits its first event: only the second one bills here.
+    expect(foldSessionLogCost({ events, inheritedEventCount: 1 })?.total).toBeCloseTo(10, 9)
+  })
+
+  it('returns undefined when only inherited events exist', () => {
+    expect(foldSessionLogCost({ events: [assistant()], inheritedEventCount: 1 })).toBeUndefined()
+  })
+})
+
+describe('combineSessionCosts', () => {
+  function cost(partial: Partial<SessionCost>): SessionCost {
+    return {
+      total: 0,
+      requests: 0,
+      buckets: { cacheRead: 0, uncachedInput: 0, output: 0 },
+      models: [],
+      web: { search: { calls: 0, amount: 0 }, fetch: { calls: 0, amount: 0 } },
+      ...partial,
+    }
+  }
+
+  it('sums subagent totals into the session total and records their share', () => {
+    const own = cost({
+      total: 1,
+      requests: 2,
+      models: [{ model: 'deepseek-flash', total: 1, requests: 2 }],
+      buckets: { cacheRead: 0.1, uncachedInput: 0.2, output: 0.7 },
+      web: { search: { calls: 1, amount: 0 }, fetch: { calls: 0, amount: 0 } },
+    })
+    const child = cost({
+      total: 0.5,
+      requests: 1,
+      models: [{ model: 'deepseek-flash', total: 0.5, requests: 1 }],
+      buckets: { cacheRead: 0.05, uncachedInput: 0.1, output: 0.35 },
+      web: { search: { calls: 2, amount: 0 }, fetch: { calls: 1, amount: 0 } },
+    })
+    const merged = combineSessionCosts(own, [child], 1)
+    expect(merged?.total).toBeCloseTo(1.5, 9)
+    expect(merged?.models).toEqual([{ model: 'deepseek-flash', total: 1.5, requests: 3 }])
+    expect(merged?.buckets.cacheRead).toBeCloseTo(0.15, 9)
+    expect(merged?.buckets.uncachedInput).toBeCloseTo(0.3, 9)
+    expect(merged?.buckets.output).toBeCloseTo(1.05, 9)
+    expect(merged?.web.search.calls).toBe(3)
+    expect(merged?.web.fetch.calls).toBe(1)
+    expect(merged?.subagents).toEqual({
+      sessions: 1,
+      total: 0.5,
+      requests: 1,
+      web: { search: { calls: 2, amount: 0 }, fetch: { calls: 1, amount: 0 } },
+    })
+  })
+
+  it('returns undefined without own or subagent cost', () => {
+    expect(combineSessionCosts(undefined, [])).toBeUndefined()
+  })
+
+  it('keeps a subagent-only cost alive', () => {
+    const child = cost({ total: 0.5, requests: 1 })
+    expect(combineSessionCosts(undefined, [child], 1)?.total).toBeCloseTo(0.5, 9)
+  })
+})
+
+describe('forked sessions', () => {
+  it('bills only the child events after a fork', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    const append = (session: Session, id: string): void => {
+      session.append('assistant/message', {
+        turn: 1,
+        step: 1,
+        message: {
+          id,
+          role: 'assistant',
+          content: [{ type: 'text', text: 'hi' }],
+          source: { kind: 'model', provider: 'deepseek-official', model: 'deepseek-flash' },
+        },
+        usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
+        stream: [],
+      } as never, { surfaceOp: 'append' })
+    }
+    const parent = ctx.sessions.create(SessionId('cost-fork-parent'))
+    append(parent, 'fork-parent-message')
+    const child = ctx.sessions.fork(parent, (parent.seq - 1) as never, SessionId('cost-fork-child'))
+    append(child, 'fork-child-message')
+    expect(foldSessionCost(parent)?.requests).toBe(1)
+    expect(foldSessionCost(child)?.requests).toBe(1)
+    await ctx.fiber.dispose()
   })
 })
 

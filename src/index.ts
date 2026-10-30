@@ -185,6 +185,18 @@ export interface SessionWebCost {
   fetch: SessionWebApiCost
 }
 
+/** What the session's descendant subagent sessions contributed to its cost. */
+export interface SessionSubagentCost {
+  /** Descendant subagent sessions folded into the totals. */
+  sessions: number
+  /** Token and web cost those sessions added, in CNY. */
+  total: number
+  /** Usage-carrying steps across those sessions. */
+  requests: number
+  /** Their Search and Fetch call share. */
+  web: SessionWebCost
+}
+
 /** The wire value the client expects for this session's accumulated cost. */
 export interface SessionCost {
   /** Total billed amount in CNY (yuan). */
@@ -199,6 +211,8 @@ export interface SessionCost {
   models: SessionModelCost[]
   /** `total`'s Search and Fetch call share, priced per successful request. */
   web: SessionWebCost
+  /** Present when subagent descendants contributed: their share of `total`. */
+  subagents?: SessionSubagentCost
 }
 
 /** Price facts plus the current billing period, sent to the stats strip. */
@@ -393,26 +407,27 @@ function toolResultText(message: { content?: unknown }): string {
 }
 
 /**
- * Fold a live session's successful Search and Fetch requests. One `web_search`
- * tool call issues one Search API request per distinct query; a search that
- * returned no results produced no billable request, and a failed tool call
- * bills nothing. One `web_fetch` call issues one Fetch API request and bills
- * when the page came back. Each request is priced at its own result moment, so
- * a session spanning the 2026-11-01 billing start bills only its later calls.
+ * Fold the successful Search and Fetch requests in one session log. One
+ * `web_search` tool call issues one Search API request per distinct query; a
+ * search that returned no results produced no billable request, and a failed
+ * tool call bills nothing. One `web_fetch` call issues one Fetch API request
+ * and bills when the page came back. Each request is priced at its own result
+ * moment, so a session spanning the 2026-11-01 billing start bills only its
+ * later calls.
  *
  * The log is append-only and may carry several results for one call when the
  * tool-result pruner replaces content later; the first result carries the
  * request's real outcome and moment, so every call is counted at most once and
  * a replacement never adds a fee.
- * @param session - the live session whose log is folded.
+ * @param events - the events to fold, already excluding any inherited prefix.
  * @returns billable call counts and amounts per API; both zero without web calls.
  */
-export function foldSessionWebCost(session: Session): SessionWebCost {
+function foldWebCostEvents(events: readonly WebLogEvent[]): SessionWebCost {
   const search: SessionWebApiCost = { calls: 0, amount: 0 }
   const fetch: SessionWebApiCost = { calls: 0, amount: 0 }
   const calls = new Map<string, WebToolCall>()
   const results = new Map<string, { message: { toolCallId: string; isError?: unknown; content?: unknown }; time: number }>()
-  for (const event of session.snapshotEvents() as unknown as WebLogEvent[]) {
+  for (const event of events) {
     if (event.type === 'tool/call') {
       const data = event.data as { name?: unknown; callId?: unknown; arguments?: unknown }
       if (typeof data.name !== 'string' || typeof data.callId !== 'string') continue
@@ -457,6 +472,16 @@ export function foldSessionWebCost(session: Session): SessionWebCost {
     search.amount += requests * price
   }
   return { search, fetch }
+}
+
+/**
+ * Fold a live session's own successful Search and Fetch requests, excluding any
+ * fork-inherited prefix that its parent already paid for.
+ * @param session - the live session whose log is folded.
+ * @returns billable call counts and amounts per API; both zero without web calls.
+ */
+export function foldSessionWebCost(session: Session): SessionWebCost {
+  return foldWebCostEvents(ownLogEvents(session))
 }
 
 /** Per-model accumulated usage and cost, keyed by model id. */
@@ -504,7 +529,7 @@ function accumulateUsage(
 }
 
 /**
- * Fold a live session's log into per-model accumulated cost. Each
+ * Fold one session's own log events into per-model accumulated cost. Each
  * `assistant/message` event pairs its model id (from the message source) with
  * the usage the adapter reported on that step, and bills it at the rates of
  * that event's own moment — a session spanning the 2026-09-10 price cut, a
@@ -512,20 +537,24 @@ function accumulateUsage(
  * Events without usage, and messages without a model source, are skipped. The
  * session's successful Search and Fetch requests are folded in as well, priced
  * per request at their own result moment.
- * @param session - the live session whose log is folded.
+ * @param events - the events to fold, already excluding any inherited prefix.
  * @param holidays - statutory-holiday date keys billed off-peak all day.
  * @returns the summed cost with its bucket, per-model and web-call splits, the
  *   number of usage-carrying steps, and the last model seen — or undefined when
- *   the session has neither token usage nor web calls.
+ *   the log has neither token usage nor web calls.
  */
-export function foldSessionCost(session: Session, holidays: ReadonlySet<string> = DEFAULT_HOLIDAY_SET): SessionCost | undefined {
+function foldEventsCost(events: readonly WebLogEvent[], holidays: ReadonlySet<string>): SessionCost | undefined {
   const byModel = new Map<string, ModelAccumulator>()
   let lastModel: string | undefined
-  for (const event of session.snapshotEvents()) {
+  for (const event of events) {
     if (event.type !== 'assistant/message') continue
-    const source = event.data.message?.source
-    if (source === undefined || source.kind !== 'model') continue
-    if (event.data.usage === undefined) continue
+    const data = event.data as {
+      message?: { source?: { kind?: unknown; model?: unknown } }
+      usage?: TokenUsage
+    }
+    const source = data.message?.source
+    if (source === undefined || source.kind !== 'model' || typeof source.model !== 'string') continue
+    if (data.usage === undefined) continue
     // Group by canonical name: the flash aliases bill identically and must not
     // split one model into two rows when a session spans the rename.
     const model = canonicalModel(source.model)
@@ -542,10 +571,10 @@ export function foldSessionCost(session: Session, holidays: ReadonlySet<string> 
       }
       byModel.set(model, acc)
     }
-    accumulateUsage(event.data.usage, acc, pricesAt(model, event.time, holidays))
+    accumulateUsage(data.usage, acc, pricesAt(model, event.time, holidays))
     lastModel = model
   }
-  const web = foldSessionWebCost(session)
+  const web = foldWebCostEvents(events)
   if (byModel.size === 0 && web.search.calls === 0 && web.fetch.calls === 0) return undefined
   let total = web.search.amount + web.fetch.amount
   let requests = 0
@@ -564,6 +593,130 @@ export function foldSessionCost(session: Session, holidays: ReadonlySet<string> 
   const cost: SessionCost = { total, requests, buckets, models, web }
   if (lastModel !== undefined) cost.lastModel = lastModel
   return cost
+}
+
+/**
+ * The events a live session owns: its own work after any fork-inherited
+ * prefix. The prefix was billed to the parent, so folding it again would bill
+ * it twice.
+ * @param session - the live session.
+ * @returns its own events, in log order.
+ */
+function ownLogEvents(session: Session): readonly WebLogEvent[] {
+  return session.ownEvents() as unknown as readonly WebLogEvent[]
+}
+
+/**
+ * Fold a live session's own log into per-model accumulated cost. A session
+ * forked from another one inherits that parent's prefix and is charged only for
+ * its own later events.
+ * @param session - the live session whose log is folded.
+ * @param holidays - statutory-holiday date keys billed off-peak all day.
+ * @returns the summed cost, or undefined when the session has no own usage and
+ *   no own web calls.
+ */
+export function foldSessionCost(session: Session, holidays: ReadonlySet<string> = DEFAULT_HOLIDAY_SET): SessionCost | undefined {
+  return foldEventsCost(ownLogEvents(session), holidays)
+}
+
+/** One persisted session's raw log slice, as `sessionQuery.readSession` returns it. */
+export interface SessionLogSlice {
+  /** Complete raw event log, including any fork-inherited prefix. */
+  events: readonly unknown[]
+  /** Number of leading events inherited from the fork parent; excluded from cost. */
+  inheritedEventCount: number
+}
+
+/**
+ * Fold a persisted session's log (a closed subagent, for example) without
+ * making it live. The fork-inherited prefix is excluded for the same reason a
+ * live fork excludes it: that usage was already billed elsewhere.
+ * @param log - the persisted log slice.
+ * @param holidays - statutory-holiday date keys billed off-peak all day.
+ * @returns the summed cost, or undefined when the log has no own usage and no
+ *   own web calls.
+ */
+export function foldSessionLogCost(log: SessionLogSlice, holidays: ReadonlySet<string> = DEFAULT_HOLIDAY_SET): SessionCost | undefined {
+  const inherited = Math.max(0, Math.trunc(log.inheritedEventCount))
+  return foldEventsCost(log.events.slice(inherited) as readonly WebLogEvent[], holidays)
+}
+
+/**
+ * Merge one session's own cost with the costs of the subagent sessions it
+ * spawned, at any depth. The merged cost keeps the per-model and per-bucket
+ * splits additive and records what the subagents contributed.
+ * @param own - the root session's own cost, or undefined when it has none.
+ * @param subagents - each descendant subagent session's own cost.
+ * @param subagentSessions - how many descendant sessions were found; defaults
+ *   to the number of priced costs and may be larger when a log was unreadable.
+ * @returns the combined cost, or undefined when nothing contributed.
+ */
+export function combineSessionCosts(
+  own: SessionCost | undefined,
+  subagents: readonly SessionCost[],
+  subagentSessions: number = subagents.length,
+): SessionCost | undefined {
+  if (own === undefined && subagents.length === 0) return undefined
+  const base: SessionCost = own === undefined
+    ? {
+        total: 0,
+        requests: 0,
+        buckets: { cacheRead: 0, uncachedInput: 0, output: 0 },
+        models: [],
+        web: { search: { calls: 0, amount: 0 }, fetch: { calls: 0, amount: 0 } },
+      }
+    : {
+        ...own,
+        buckets: { ...own.buckets },
+        models: own.models.map(row => ({ ...row })),
+        web: {
+          search: { ...own.web.search },
+          fetch: { ...own.web.fetch },
+        },
+      }
+  const models = new Map<string, SessionModelCost>()
+  for (const row of base.models) models.set(row.model, row)
+  const childWeb: SessionWebCost = { search: { calls: 0, amount: 0 }, fetch: { calls: 0, amount: 0 } }
+  let childTotal = 0
+  let childRequests = 0
+  for (const child of subagents) {
+    childTotal += child.total
+    childRequests += child.requests
+    base.total += child.total
+    base.requests += child.requests
+    base.buckets.cacheRead += child.buckets.cacheRead
+    base.buckets.uncachedInput += child.buckets.uncachedInput
+    base.buckets.output += child.buckets.output
+    base.web.search.calls += child.web.search.calls
+    base.web.search.amount += child.web.search.amount
+    base.web.fetch.calls += child.web.fetch.calls
+    base.web.fetch.amount += child.web.fetch.amount
+    childWeb.search.calls += child.web.search.calls
+    childWeb.search.amount += child.web.search.amount
+    childWeb.fetch.calls += child.web.fetch.calls
+    childWeb.fetch.amount += child.web.fetch.amount
+    for (const row of child.models) {
+      const existing = models.get(row.model)
+      if (existing === undefined) {
+        models.set(row.model, { ...row })
+      } else {
+        existing.total += row.total
+        existing.requests += row.requests
+      }
+    }
+    if (base.lastModel === undefined && child.lastModel !== undefined) base.lastModel = child.lastModel
+  }
+  // Expensive model first, matching the single-session fold.
+  base.models = [...models.values()].sort((a, b) => b.total - a.total)
+  if (subagents.length > 0 || subagentSessions > 0) {
+    base.subagents = {
+      sessions: Math.max(subagentSessions, subagents.length),
+      total: childTotal,
+      requests: childRequests,
+      web: childWeb,
+    }
+  }
+  return base
 }
 
 /** Parse a DeepSeek balance response into the client's account row. */
@@ -622,7 +775,7 @@ export interface BalanceResponse {
   balance_infos?: BalanceInfo[]
   /** The billing prices in effect right now. */
   prices: BalancePrices
-  /** Accumulated session cost; absent when the session has neither token usage nor web calls. */
+  /** Accumulated session cost; absent when the session and its subagents have neither token usage nor web calls. */
   sessionCost?: SessionCost
 }
 
@@ -701,6 +854,190 @@ async function resolveApiKey(ctx: Context): Promise<string | undefined> {
   return process.env[API_KEY_ENV]?.trim() || undefined
 }
 
+/** Structural view of the live SessionStore subset the pill reads. */
+interface SessionStoreFace {
+  get(id: unknown): Session | undefined
+  list(): Session[]
+}
+
+/** Structural view of the session-query service subset the pill reads. */
+interface SessionQueryFace {
+  traceSession(id: unknown): Promise<{ descendants?: readonly SessionLineageNodeFace[] }>
+  readSession(id: unknown): Promise<{ events: readonly unknown[]; inheritedEventCount: number }>
+}
+
+/** One node of the session-query lineage tree. */
+interface SessionLineageNodeFace {
+  session: { header: { id: unknown; origin?: unknown }; live?: unknown }
+  descendants?: readonly SessionLineageNodeFace[]
+}
+
+/**
+ * The live session store, when the store service is available.
+ * @param ctx - host context.
+ * @returns the store face, or undefined.
+ */
+function sessionStore(ctx: Context): SessionStoreFace | undefined {
+  return ctx.get('sessions') as unknown as SessionStoreFace | undefined
+}
+
+/**
+ * The unified session-query service, when it is installed. It can trace
+ * lineage and read a persisted log, which is how closed subagent sessions keep
+ * counting after they stop being live.
+ * @param ctx - host context.
+ * @returns the query face, or undefined.
+ */
+function sessionQuery(ctx: Context): SessionQueryFace | undefined {
+  return ctx.get('sessionQuery') as unknown as SessionQueryFace | undefined
+}
+
+/** One descendant subagent session found for a root session. */
+interface SubagentRecord {
+  id: string
+  /** Whether the session is still live (its log can be read from memory). */
+  live: boolean
+}
+
+/**
+ * Find every descendant subagent session of a root session, at any depth.
+ * `sessionQuery` traces durable lineage, so closed subagents still count;
+ * without it only live sessions are discoverable. A user fork shares the
+ * lineage field without the `subagent` origin and is an independent
+ * conversation, so it is never counted.
+ * @param ctx - host context.
+ * @param root - the session whose pill is being priced.
+ * @returns descendant records in lineage order, possibly empty.
+ */
+async function subagentRecords(ctx: Context, root: Session): Promise<SubagentRecord[]> {
+  const query = sessionQuery(ctx)
+  if (query !== undefined) {
+    try {
+      const trace = await query.traceSession(root.id as never)
+      const records: SubagentRecord[] = []
+      const visit = (nodes: readonly SessionLineageNodeFace[] | undefined): void => {
+        if (nodes === undefined) return
+        for (const node of nodes) {
+          const { id, origin } = node.session.header
+          // A user fork shares the lineage without the subagent origin; it is a
+          // separate conversation, so neither it nor its own children count.
+          if (origin !== 'subagent') continue
+          records.push({ id: String(id), live: node.session.live === true })
+          visit(node.descendants)
+        }
+      }
+      visit(trace.descendants)
+      return records
+    } catch {
+      // An unavailable or incomplete query backend falls back to the live
+      // store: currently resident children are still counted.
+    }
+  }
+  return liveSubagentRecords(ctx, root)
+}
+
+/**
+ * Live-store fallback: walk header lineage for resident subagent children.
+ * @param ctx - host context.
+ * @param root - the root session.
+ * @returns resident descendant records.
+ */
+function liveSubagentRecords(ctx: Context, root: Session): SubagentRecord[] {
+  const store = sessionStore(ctx)
+  if (store === undefined) return []
+  const childrenOf = new Map<string, Session[]>()
+  for (const session of store.list()) {
+    const header = session.header as { parentSession?: unknown; origin?: unknown }
+    if (typeof header.parentSession !== 'string' || header.origin !== 'subagent') continue
+    const siblings = childrenOf.get(header.parentSession) ?? []
+    siblings.push(session)
+    childrenOf.set(header.parentSession, siblings)
+  }
+  const records: SubagentRecord[] = []
+  const pending = [String(root.id)]
+  const visited = new Set<string>()
+  while (pending.length > 0) {
+    const parentId = pending.shift() as string
+    if (visited.has(parentId)) continue
+    visited.add(parentId)
+    for (const child of childrenOf.get(parentId) ?? []) {
+      records.push({ id: String(child.id), live: true })
+      pending.push(String(child.id))
+    }
+  }
+  return records
+}
+
+/** Persisted subagent costs; a closed log no longer changes. */
+const subagentCostCache = new Map<string, SessionCost>()
+
+/** Upper bound on cached closed-subagent costs. */
+const SUBAGENT_COST_CACHE_LIMIT = 256
+
+/**
+ * Remember one subagent session's cost, evicting the oldest entry at the cap.
+ * @param id - the child session id.
+ * @param cost - its folded cost.
+ */
+function rememberSubagentCost(id: string, cost: SessionCost): void {
+  if (subagentCostCache.size >= SUBAGENT_COST_CACHE_LIMIT) {
+    const oldest = subagentCostCache.keys().next().value
+    if (oldest !== undefined) subagentCostCache.delete(oldest)
+  }
+  subagentCostCache.set(id, cost)
+}
+
+/**
+ * Fold the cost of every descendant subagent session. Live sessions are read
+ * from the store; closed ones through the session-query service, with a small
+ * cache because a closed log never changes. One unreadable child log is
+ * skipped rather than failing the whole pill.
+ * @param ctx - host context.
+ * @param root - the session whose pill is being priced.
+ * @param holidays - statutory-holiday date keys billed off-peak all day.
+ * @returns the priced children and how many descendant sessions were found.
+ */
+async function subagentCosts(
+  ctx: Context,
+  root: Session,
+  holidays: ReadonlySet<string>,
+): Promise<{ costs: SessionCost[]; sessions: number }> {
+  const records = await subagentRecords(ctx, root)
+  const store = sessionStore(ctx)
+  const query = sessionQuery(ctx)
+  const costs: SessionCost[] = []
+  for (const record of records) {
+    if (record.live && store !== undefined) {
+      const live = store.get(record.id as never)
+      if (live !== undefined) {
+        const cost = foldSessionCost(live, holidays)
+        if (cost !== undefined) {
+          rememberSubagentCost(record.id, cost)
+          costs.push(cost)
+        }
+        continue
+      }
+    }
+    const cached = subagentCostCache.get(record.id)
+    if (cached !== undefined) {
+      costs.push(cached)
+      continue
+    }
+    if (query === undefined) continue
+    try {
+      const log = await query.readSession(record.id as never)
+      const cost = foldSessionLogCost({ events: log.events, inheritedEventCount: log.inheritedEventCount }, holidays)
+      if (cost !== undefined) {
+        rememberSubagentCost(record.id, cost)
+        costs.push(cost)
+      }
+    } catch {
+      // A child log that cannot be read must not take the pill down.
+    }
+  }
+  return { costs, sessions: records.length }
+}
+
 /**
  * Mount the `/api/dsh-balance` exact route. Registered as an effect so the
  * route lives and dies with this plugin's fiber.
@@ -743,7 +1080,11 @@ export function apply(ctx: Context, config: Config = { holidays: DEFAULT_HOLIDAY
       // durable projection at today's rates when the session is not attached
       // (a cold session is priced by the client from its own read anyway).
       if (session !== undefined) {
-        const folded = foldSessionCost(session, holidays)
+        const own = foldSessionCost(session, holidays)
+        // A delegated subagent spends the same account's tokens and web calls,
+        // so the session's reading includes every descendant it spawned.
+        const children = await subagentCosts(webCtx, session, holidays)
+        const folded = combineSessionCosts(own, children.costs, children.sessions)
         if (folded !== undefined) {
           response.sessionCost = folded
         }

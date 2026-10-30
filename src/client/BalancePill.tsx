@@ -68,6 +68,12 @@ interface WebCost {
   fetch: WebApiCost
 }
 
+/** What the session's descendant subagent sessions contributed. */
+interface SubagentCost {
+  sessions: number
+  total: number
+}
+
 /** The fields this pill reads from `/api/dsh-balance`. */
 interface BalanceState {
   /** Account balance as the API reported it. */
@@ -86,6 +92,8 @@ interface BalanceState {
   models?: ModelCost[]
   /** Search/Fetch call cost folded by the host; absent without a fold. */
   web?: WebCost
+  /** Subagent descendant share of the host total; absent without any. */
+  subagents?: SubagentCost
 }
 
 /**
@@ -195,6 +203,7 @@ export const BalancePill = memo(function BalancePill({ useProjection, sessionId,
               search?: { calls?: unknown; amount?: unknown }
               fetch?: { calls?: unknown; amount?: unknown }
             }
+            subagents?: { sessions?: unknown; total?: unknown }
           }
         }
         if (!alive) return
@@ -233,6 +242,13 @@ export const BalancePill = memo(function BalancePill({ useProjection, sessionId,
         const parsedWeb = rawWeb === undefined
           ? undefined
           : { search: webApi(rawWeb.search), fetch: webApi(rawWeb.fetch) }
+        const rawSubagents = data.sessionCost?.subagents
+        const parsedSubagents = rawSubagents === undefined
+          ? undefined
+          : {
+              sessions: Number(rawSubagents.sessions ?? 0),
+              total: Number(rawSubagents.total ?? 0),
+            }
         setBalance({
           ...(info === undefined ? {} : { total: String(info.total_balance) }),
           ...(parsedPrices === undefined ? {} : { prices: parsedPrices }),
@@ -243,6 +259,7 @@ export const BalancePill = memo(function BalancePill({ useProjection, sessionId,
           ...(parsedBuckets === undefined ? {} : { buckets: parsedBuckets }),
           ...(parsedModels === undefined ? {} : { models: parsedModels }),
           ...(parsedWeb === undefined ? {} : { web: parsedWeb }),
+          ...(parsedSubagents === undefined ? {} : { subagents: parsedSubagents }),
         })
       } catch (error) {
         if (alive) setBalance({ error: String(error) })
@@ -283,6 +300,13 @@ export const BalancePill = memo(function BalancePill({ useProjection, sessionId,
 
   const buckets = balance.buckets ?? bucketCost(usage, balance.prices)
   const models = balance.models ?? []
+  const subagents = balance.subagents
+  const hasSubagents = subagents !== undefined && subagents.sessions > 0
+  // The host merges subagent spend into the same model rows; name that in the
+  // section title only when there is something to merge.
+  const modelsTitle = hasSubagents
+    ? t('balance.dialog.modelsWithSubagents')
+    : t('balance.dialog.models')
   const amount = (yuan: number): string => t('balance.amount', { amount: formatAmount(yuan) })
   // Calls inside the official free period (before 2026-11-01 00:00 Beijing)
   // count but read as free rather than as an oddly rounded ¥0.00.
@@ -376,11 +400,19 @@ export const BalancePill = memo(function BalancePill({ useProjection, sessionId,
                   <dd>{webAmount(web.fetch)}</dd>
                 </>
               )}
+              {/* Delegated subagent sessions spend the same account's tokens
+                  and web calls; the host folds them into the totals above. */}
+              {hasSubagents && subagents !== undefined && (
+                <>
+                  <dt>{t('balance.dialog.subagents', { count: subagents.sessions })}</dt>
+                  <dd>{amount(subagents.total)}</dd>
+                </>
+              )}
             </dl>
             {models.length > 0 && (
               <>
                 <div className={css.titleRule} aria-hidden />
-                <div className={css.modelsTitle}>{t('balance.dialog.models')}</div>
+                <div className={css.modelsTitle}>{modelsTitle}</div>
                 <dl className={css.details} data-session-balance-models>
                   {models.map(row => (
                     <Fragment key={row.model}>

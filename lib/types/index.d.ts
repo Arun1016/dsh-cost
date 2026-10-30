@@ -81,6 +81,17 @@ export interface SessionWebCost {
     /** Successful Fetch API requests that returned page content. */
     fetch: SessionWebApiCost;
 }
+/** What the session's descendant subagent sessions contributed to its cost. */
+export interface SessionSubagentCost {
+    /** Descendant subagent sessions folded into the totals. */
+    sessions: number;
+    /** Token and web cost those sessions added, in CNY. */
+    total: number;
+    /** Usage-carrying steps across those sessions. */
+    requests: number;
+    /** Their Search and Fetch call share. */
+    web: SessionWebCost;
+}
 /** The wire value the client expects for this session's accumulated cost. */
 export interface SessionCost {
     /** Total billed amount in CNY (yuan). */
@@ -95,6 +106,8 @@ export interface SessionCost {
     models: SessionModelCost[];
     /** `total`'s Search and Fetch call share, priced per successful request. */
     web: SessionWebCost;
+    /** Present when subagent descendants contributed: their share of `total`. */
+    subagents?: SessionSubagentCost;
 }
 /** Price facts plus the current billing period, sent to the stats strip. */
 export interface BalancePrices {
@@ -193,37 +206,50 @@ export declare function webCallPriceYuan(timeMs: number): number;
  */
 export declare function webSearchQueries(raw: unknown): string[];
 /**
- * Fold a live session's successful Search and Fetch requests. One `web_search`
- * tool call issues one Search API request per distinct query; a search that
- * returned no results produced no billable request, and a failed tool call
- * bills nothing. One `web_fetch` call issues one Fetch API request and bills
- * when the page came back. Each request is priced at its own result moment, so
- * a session spanning the 2026-11-01 billing start bills only its later calls.
- *
- * The log is append-only and may carry several results for one call when the
- * tool-result pruner replaces content later; the first result carries the
- * request's real outcome and moment, so every call is counted at most once and
- * a replacement never adds a fee.
+ * Fold a live session's own successful Search and Fetch requests, excluding any
+ * fork-inherited prefix that its parent already paid for.
  * @param session - the live session whose log is folded.
  * @returns billable call counts and amounts per API; both zero without web calls.
  */
 export declare function foldSessionWebCost(session: Session): SessionWebCost;
 /**
- * Fold a live session's log into per-model accumulated cost. Each
- * `assistant/message` event pairs its model id (from the message source) with
- * the usage the adapter reported on that step, and bills it at the rates of
- * that event's own moment — a session spanning the 2026-09-10 price cut, a
- * peak-window boundary, or the pro-to-flash routing never mixes rate tables.
- * Events without usage, and messages without a model source, are skipped. The
- * session's successful Search and Fetch requests are folded in as well, priced
- * per request at their own result moment.
+ * Fold a live session's own log into per-model accumulated cost. A session
+ * forked from another one inherits that parent's prefix and is charged only for
+ * its own later events.
  * @param session - the live session whose log is folded.
  * @param holidays - statutory-holiday date keys billed off-peak all day.
- * @returns the summed cost with its bucket, per-model and web-call splits, the
- *   number of usage-carrying steps, and the last model seen — or undefined when
- *   the session has neither token usage nor web calls.
+ * @returns the summed cost, or undefined when the session has no own usage and
+ *   no own web calls.
  */
 export declare function foldSessionCost(session: Session, holidays?: ReadonlySet<string>): SessionCost | undefined;
+/** One persisted session's raw log slice, as `sessionQuery.readSession` returns it. */
+export interface SessionLogSlice {
+    /** Complete raw event log, including any fork-inherited prefix. */
+    events: readonly unknown[];
+    /** Number of leading events inherited from the fork parent; excluded from cost. */
+    inheritedEventCount: number;
+}
+/**
+ * Fold a persisted session's log (a closed subagent, for example) without
+ * making it live. The fork-inherited prefix is excluded for the same reason a
+ * live fork excludes it: that usage was already billed elsewhere.
+ * @param log - the persisted log slice.
+ * @param holidays - statutory-holiday date keys billed off-peak all day.
+ * @returns the summed cost, or undefined when the log has no own usage and no
+ *   own web calls.
+ */
+export declare function foldSessionLogCost(log: SessionLogSlice, holidays?: ReadonlySet<string>): SessionCost | undefined;
+/**
+ * Merge one session's own cost with the costs of the subagent sessions it
+ * spawned, at any depth. The merged cost keeps the per-model and per-bucket
+ * splits additive and records what the subagents contributed.
+ * @param own - the root session's own cost, or undefined when it has none.
+ * @param subagents - each descendant subagent session's own cost.
+ * @param subagentSessions - how many descendant sessions were found; defaults
+ *   to the number of priced costs and may be larger when a log was unreadable.
+ * @returns the combined cost, or undefined when nothing contributed.
+ */
+export declare function combineSessionCosts(own: SessionCost | undefined, subagents: readonly SessionCost[], subagentSessions?: number): SessionCost | undefined;
 /** Parse a DeepSeek balance response into the client's account row. */
 export declare function parseBalanceInfo(raw: unknown): BalanceInfo | undefined;
 /**
@@ -240,7 +266,7 @@ export interface BalanceResponse {
     balance_infos?: BalanceInfo[];
     /** The billing prices in effect right now. */
     prices: BalancePrices;
-    /** Accumulated session cost; absent when the session has neither token usage nor web calls. */
+    /** Accumulated session cost; absent when the session and its subagents have neither token usage nor web calls. */
     sessionCost?: SessionCost;
 }
 /**

@@ -26,7 +26,9 @@ export const zh = {
   'balance.dialog.webSearch': '网页搜索（{count} 次）',
   'balance.dialog.webFetch': '网页抓取（{count} 次）',
   'balance.dialog.webFree': '免费',
+  'balance.dialog.subagents': '其中子代理（{count} 个会话）',
   'balance.dialog.models': '各模型（本会话）',
+  'balance.dialog.modelsWithSubagents': '各模型（本会话 + 子代理）',
 }
 
 /** English dictionary. */
@@ -47,7 +49,9 @@ export const en = {
   'balance.dialog.webSearch': 'Web search ({count})',
   'balance.dialog.webFetch': 'Web fetch ({count})',
   'balance.dialog.webFree': 'Free',
+  'balance.dialog.subagents': 'Of which subagents ({count})',
   'balance.dialog.models': 'By model (this session)',
+  'balance.dialog.modelsWithSubagents': 'By model (session + subagents)',
 }
 
 /** Every dictionary key this plugin owns. */

@@ -24,7 +24,9 @@ export declare const zh: {
     'balance.dialog.webSearch': string;
     'balance.dialog.webFetch': string;
     'balance.dialog.webFree': string;
+    'balance.dialog.subagents': string;
     'balance.dialog.models': string;
+    'balance.dialog.modelsWithSubagents': string;
 };
 /** English dictionary. */
 export declare const en: {
@@ -44,7 +46,9 @@ export declare const en: {
     'balance.dialog.webSearch': string;
     'balance.dialog.webFetch': string;
     'balance.dialog.webFree': string;
+    'balance.dialog.subagents': string;
     'balance.dialog.models': string;
+    'balance.dialog.modelsWithSubagents': string;
 };
 /** Every dictionary key this plugin owns. */
 export type CostStatsKey = keyof typeof zh;
