@@ -25,6 +25,13 @@ export declare const zh: {
     'balance.dialog.webFetch': string;
     'balance.dialog.webFree': string;
     'balance.dialog.subagents': string;
+    'balance.dialog.subagentName': string;
+    'balance.dialog.subagentToken': string;
+    'balance.dialog.subagentWeb': string;
+    'balance.dialog.subagentTotal': string;
+    'balance.dialog.subagentRequests': string;
+    'balance.dialog.subagentSearch': string;
+    'balance.dialog.subagentFetch': string;
     'balance.dialog.models': string;
     'balance.dialog.modelsWithSubagents': string;
 };
@@ -47,6 +54,13 @@ export declare const en: {
     'balance.dialog.webFetch': string;
     'balance.dialog.webFree': string;
     'balance.dialog.subagents': string;
+    'balance.dialog.subagentName': string;
+    'balance.dialog.subagentToken': string;
+    'balance.dialog.subagentWeb': string;
+    'balance.dialog.subagentTotal': string;
+    'balance.dialog.subagentRequests': string;
+    'balance.dialog.subagentSearch': string;
+    'balance.dialog.subagentFetch': string;
     'balance.dialog.models': string;
     'balance.dialog.modelsWithSubagents': string;
 };

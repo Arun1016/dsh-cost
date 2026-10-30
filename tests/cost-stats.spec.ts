@@ -496,7 +496,7 @@ describe('combineSessionCosts', () => {
       buckets: { cacheRead: 0.05, uncachedInput: 0.1, output: 0.35 },
       web: { search: { calls: 2, amount: 0 }, fetch: { calls: 1, amount: 0 } },
     })
-    const merged = combineSessionCosts(own, [child], 1)
+    const merged = combineSessionCosts(own, [{ id: 'child-session', label: 'child label', cost: child }], 1)
     expect(merged?.total).toBeCloseTo(1.5, 9)
     expect(merged?.models).toEqual([{ model: 'deepseek-flash', total: 1.5, requests: 3 }])
     expect(merged?.buckets.cacheRead).toBeCloseTo(0.15, 9)
@@ -509,6 +509,14 @@ describe('combineSessionCosts', () => {
       total: 0.5,
       requests: 1,
       web: { search: { calls: 2, amount: 0 }, fetch: { calls: 1, amount: 0 } },
+      items: [{
+        id: 'child-session',
+        label: 'child label',
+        requests: 1,
+        token: 0.5,
+        web: { search: { calls: 2, amount: 0 }, fetch: { calls: 1, amount: 0 } },
+        total: 0.5,
+      }],
     })
   })
 
@@ -518,7 +526,7 @@ describe('combineSessionCosts', () => {
 
   it('keeps a subagent-only cost alive', () => {
     const child = cost({ total: 0.5, requests: 1 })
-    expect(combineSessionCosts(undefined, [child], 1)?.total).toBeCloseTo(0.5, 9)
+    expect(combineSessionCosts(undefined, [{ id: 'only-child', cost: child }], 1)?.total).toBeCloseTo(0.5, 9)
   })
 })
 

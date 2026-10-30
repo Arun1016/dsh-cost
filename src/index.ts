@@ -185,6 +185,22 @@ export interface SessionWebCost {
   fetch: SessionWebApiCost
 }
 
+/** One descendant subagent session's priced contribution. */
+export interface SessionSubagentItem {
+  /** Child session id. */
+  id: string
+  /** Label from the child's `subagent/descriptor`, when it has one. */
+  label?: string
+  /** Usage-carrying steps in this child's own log. */
+  requests: number
+  /** This child's token cost in CNY (its total minus its web calls). */
+  token: number
+  /** This child's successful Search and Fetch calls. */
+  web: SessionWebCost
+  /** This child's token + web cost in CNY. */
+  total: number
+}
+
 /** What the session's descendant subagent sessions contributed to its cost. */
 export interface SessionSubagentCost {
   /** Descendant subagent sessions folded into the totals. */
@@ -195,6 +211,8 @@ export interface SessionSubagentCost {
   requests: number
   /** Their Search and Fetch call share. */
   web: SessionWebCost
+  /** Per-session rows, in lineage order; may be shorter than `sessions` when a log was unreadable. */
+  items: SessionSubagentItem[]
 }
 
 /** The wire value the client expects for this session's accumulated cost. */
@@ -641,19 +659,30 @@ export function foldSessionLogCost(log: SessionLogSlice, holidays: ReadonlySet<s
   return foldEventsCost(log.events.slice(inherited) as readonly WebLogEvent[], holidays)
 }
 
+/** One descendant subagent session priced for the parent's reading. */
+export interface PricedSubagent {
+  /** Child session id. */
+  id: string
+  /** Human label from the child's `subagent/descriptor`, when present. */
+  label?: string
+  /** The child's own folded cost. */
+  cost: SessionCost
+}
+
 /**
  * Merge one session's own cost with the costs of the subagent sessions it
  * spawned, at any depth. The merged cost keeps the per-model and per-bucket
- * splits additive and records what the subagents contributed.
+ * splits additive, records what the subagents contributed, and keeps one row
+ * per child so the dialog can show each child's token and web share.
  * @param own - the root session's own cost, or undefined when it has none.
  * @param subagents - each descendant subagent session's own cost.
  * @param subagentSessions - how many descendant sessions were found; defaults
- *   to the number of priced costs and may be larger when a log was unreadable.
+ *   to the number of priced children and may be larger when a log was unreadable.
  * @returns the combined cost, or undefined when nothing contributed.
  */
 export function combineSessionCosts(
   own: SessionCost | undefined,
-  subagents: readonly SessionCost[],
+  subagents: readonly PricedSubagent[],
   subagentSessions: number = subagents.length,
 ): SessionCost | undefined {
   if (own === undefined && subagents.length === 0) return undefined
@@ -677,9 +706,12 @@ export function combineSessionCosts(
   const models = new Map<string, SessionModelCost>()
   for (const row of base.models) models.set(row.model, row)
   const childWeb: SessionWebCost = { search: { calls: 0, amount: 0 }, fetch: { calls: 0, amount: 0 } }
+  const items: SessionSubagentItem[] = []
   let childTotal = 0
   let childRequests = 0
-  for (const child of subagents) {
+  for (const priced of subagents) {
+    const child = priced.cost
+    const webAmount = child.web.search.amount + child.web.fetch.amount
     childTotal += child.total
     childRequests += child.requests
     base.total += child.total
@@ -704,6 +736,17 @@ export function combineSessionCosts(
         existing.requests += row.requests
       }
     }
+    items.push({
+      id: priced.id,
+      ...(priced.label === undefined ? {} : { label: priced.label }),
+      requests: child.requests,
+      token: child.total - webAmount,
+      web: {
+        search: { ...child.web.search },
+        fetch: { ...child.web.fetch },
+      },
+      total: child.total,
+    })
     if (base.lastModel === undefined && child.lastModel !== undefined) base.lastModel = child.lastModel
   }
   // Expensive model first, matching the single-session fold.
@@ -714,6 +757,7 @@ export function combineSessionCosts(
       total: childTotal,
       requests: childRequests,
       web: childWeb,
+      items,
     }
   }
   return base
@@ -968,23 +1012,46 @@ function liveSubagentRecords(ctx: Context, root: Session): SubagentRecord[] {
   return records
 }
 
+/** Cached closed-subagent reading: its descriptor label and folded cost. */
+interface CachedSubagent {
+  label?: string
+  cost: SessionCost
+}
+
 /** Persisted subagent costs; a closed log no longer changes. */
-const subagentCostCache = new Map<string, SessionCost>()
+const subagentCostCache = new Map<string, CachedSubagent>()
 
 /** Upper bound on cached closed-subagent costs. */
 const SUBAGENT_COST_CACHE_LIMIT = 256
 
 /**
- * Remember one subagent session's cost, evicting the oldest entry at the cap.
+ * Remember one subagent session's reading, evicting the oldest entry at the
+ * cap.
  * @param id - the child session id.
+ * @param label - its descriptor label, when any.
  * @param cost - its folded cost.
  */
-function rememberSubagentCost(id: string, cost: SessionCost): void {
+function rememberSubagentCost(id: string, label: string | undefined, cost: SessionCost): void {
   if (subagentCostCache.size >= SUBAGENT_COST_CACHE_LIMIT) {
     const oldest = subagentCostCache.keys().next().value
     if (oldest !== undefined) subagentCostCache.delete(oldest)
   }
-  subagentCostCache.set(id, cost)
+  subagentCostCache.set(id, { ...(label === undefined ? {} : { label }), cost })
+}
+
+/**
+ * The display label the subagent tool records in the child's own
+ * `subagent/descriptor` event, when it has one.
+ * @param events - the child's own events (never an inherited prefix).
+ * @returns the trimmed label, or undefined.
+ */
+function subagentLabel(events: readonly unknown[]): string | undefined {
+  for (const event of events as readonly WebLogEvent[]) {
+    if (event.type !== 'subagent/descriptor') continue
+    const data = event.data as { label?: unknown }
+    if (typeof data.label === 'string' && data.label.trim().length > 0) return data.label.trim()
+  }
+  return undefined
 }
 
 /**
@@ -1001,26 +1068,27 @@ async function subagentCosts(
   ctx: Context,
   root: Session,
   holidays: ReadonlySet<string>,
-): Promise<{ costs: SessionCost[]; sessions: number }> {
+): Promise<{ priced: PricedSubagent[]; sessions: number }> {
   const records = await subagentRecords(ctx, root)
   const store = sessionStore(ctx)
   const query = sessionQuery(ctx)
-  const costs: SessionCost[] = []
+  const priced: PricedSubagent[] = []
   for (const record of records) {
     if (record.live && store !== undefined) {
       const live = store.get(record.id as never)
       if (live !== undefined) {
         const cost = foldSessionCost(live, holidays)
         if (cost !== undefined) {
-          rememberSubagentCost(record.id, cost)
-          costs.push(cost)
+          const label = subagentLabel(live.ownEvents() as unknown as readonly WebLogEvent[])
+          rememberSubagentCost(record.id, label, cost)
+          priced.push({ id: record.id, ...(label === undefined ? {} : { label }), cost })
         }
         continue
       }
     }
     const cached = subagentCostCache.get(record.id)
     if (cached !== undefined) {
-      costs.push(cached)
+      priced.push({ id: record.id, ...(cached.label === undefined ? {} : { label: cached.label }), cost: cached.cost })
       continue
     }
     if (query === undefined) continue
@@ -1028,14 +1096,16 @@ async function subagentCosts(
       const log = await query.readSession(record.id as never)
       const cost = foldSessionLogCost({ events: log.events, inheritedEventCount: log.inheritedEventCount }, holidays)
       if (cost !== undefined) {
-        rememberSubagentCost(record.id, cost)
-        costs.push(cost)
+        const ownEvents = log.events.slice(log.inheritedEventCount)
+        const label = subagentLabel(ownEvents)
+        rememberSubagentCost(record.id, label, cost)
+        priced.push({ id: record.id, ...(label === undefined ? {} : { label }), cost })
       }
     } catch {
       // A child log that cannot be read must not take the pill down.
     }
   }
-  return { costs, sessions: records.length }
+  return { priced, sessions: records.length }
 }
 
 /**
@@ -1084,7 +1154,7 @@ export function apply(ctx: Context, config: Config = { holidays: DEFAULT_HOLIDAY
         // A delegated subagent spends the same account's tokens and web calls,
         // so the session's reading includes every descendant it spawned.
         const children = await subagentCosts(webCtx, session, holidays)
-        const folded = combineSessionCosts(own, children.costs, children.sessions)
+        const folded = combineSessionCosts(own, children.priced, children.sessions)
         if (folded !== undefined) {
           response.sessionCost = folded
         }

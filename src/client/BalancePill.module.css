@@ -78,6 +78,61 @@
   font-weight: 500;
 }
 
+/* Per-subagent table: one row per delegated session, with its token and web
+   share in separate columns so the counting basis stays visible. */
+.subagentsTitle {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-weight: 500;
+}
+
+.subagentsTotal {
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.subagents {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) auto auto auto;
+  gap: 6px 10px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.subagentHead {
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+}
+
+.subagentName {
+  min-width: 0;
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+
+.subagentLabel {
+  display: block;
+}
+
+.subagentMeta {
+  display: block;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.subagentNum {
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
 /* Panel skin copied from ui-chat's stat-dialog.module.css so this pill's dialog
    matches the official stat pills' surface exactly. */
 .panel {

@@ -68,10 +68,21 @@ interface WebCost {
   fetch: WebApiCost
 }
 
+/** One descendant subagent session's priced contribution. */
+interface SubagentItem {
+  id: string
+  label?: string
+  requests: number
+  token: number
+  web: WebCost
+  total: number
+}
+
 /** What the session's descendant subagent sessions contributed. */
 interface SubagentCost {
   sessions: number
   total: number
+  items: SubagentItem[]
 }
 
 /** The fields this pill reads from `/api/dsh-balance`. */
@@ -155,6 +166,17 @@ function formatWebAmount(yuan: number): string {
   return yuan.toFixed(3)
 }
 
+/**
+ * Format one subagent's amount. Subagent totals are often below a cent, so
+ * keep four decimals under ¥0.1 and two above it.
+ * @param yuan - the amount in CNY.
+ * @returns the display string.
+ */
+function formatSubagentAmount(yuan: number): string {
+  if (yuan > 0 && yuan < 0.1) return yuan.toFixed(4)
+  return yuan.toFixed(2)
+}
+
 export const BalancePill = memo(function BalancePill({ useProjection, sessionId, t }: BalancePillProps) {
   const usage = useProjection('tokenUsage')
   const [open, setOpen] = useState(false)
@@ -203,7 +225,21 @@ export const BalancePill = memo(function BalancePill({ useProjection, sessionId,
               search?: { calls?: unknown; amount?: unknown }
               fetch?: { calls?: unknown; amount?: unknown }
             }
-            subagents?: { sessions?: unknown; total?: unknown }
+            subagents?: {
+              sessions?: unknown
+              total?: unknown
+              items?: {
+                id?: unknown
+                label?: unknown
+                requests?: unknown
+                token?: unknown
+                web?: {
+                  search?: { calls?: unknown; amount?: unknown }
+                  fetch?: { calls?: unknown; amount?: unknown }
+                }
+                total?: unknown
+              }[]
+            }
           }
         }
         if (!alive) return
@@ -243,11 +279,27 @@ export const BalancePill = memo(function BalancePill({ useProjection, sessionId,
           ? undefined
           : { search: webApi(rawWeb.search), fetch: webApi(rawWeb.fetch) }
         const rawSubagents = data.sessionCost?.subagents
+        const rawSubagentItems = rawSubagents?.items
+        const subagentItems = Array.isArray(rawSubagentItems)
+          ? rawSubagentItems.flatMap(row => (
+            typeof row?.id === 'string'
+              ? [{
+                  id: row.id,
+                  ...(typeof row.label === 'string' && row.label.length > 0 ? { label: row.label } : {}),
+                  requests: Number(row.requests ?? 0),
+                  token: Number(row.token ?? 0),
+                  web: { search: webApi(row.web?.search), fetch: webApi(row.web?.fetch) },
+                  total: Number(row.total ?? 0),
+                }]
+              : []
+          ))
+          : []
         const parsedSubagents = rawSubagents === undefined
           ? undefined
           : {
               sessions: Number(rawSubagents.sessions ?? 0),
               total: Number(rawSubagents.total ?? 0),
+              items: subagentItems,
             }
         setBalance({
           ...(info === undefined ? {} : { total: String(info.total_balance) }),
@@ -313,6 +365,21 @@ export const BalancePill = memo(function BalancePill({ useProjection, sessionId,
   const webAmount = (api: WebApiCost): string => api.calls > 0 && api.amount === 0
     ? t('balance.dialog.webFree')
     : t('balance.amount', { amount: formatWebAmount(api.amount) })
+  const subagentAmount = (yuan: number): string => t('balance.amount', { amount: formatSubagentAmount(yuan) })
+  // Each subagent row states its statistical basis: usage-carrying requests and
+  // any web calls, then the token and web amounts separately.
+  const subagentMeta = (item: SubagentItem): string => {
+    const parts = [t('balance.dialog.subagentRequests', { count: item.requests })]
+    if (item.web.search.calls > 0) parts.push(t('balance.dialog.subagentSearch', { count: item.web.search.calls }))
+    if (item.web.fetch.calls > 0) parts.push(t('balance.dialog.subagentFetch', { count: item.web.fetch.calls }))
+    return parts.join(' · ')
+  }
+  const subagentWeb = (item: SubagentItem): string => {
+    const calls = item.web.search.calls + item.web.fetch.calls
+    if (calls === 0) return '—'
+    const webTotal = item.web.search.amount + item.web.fetch.amount
+    return webTotal === 0 ? t('balance.dialog.webFree') : t('balance.amount', { amount: formatWebAmount(webTotal) })
+  }
   const separator = <span className={css.sep} aria-hidden>·</span>
   const labelText = [periodText, balanceText, costText].filter(part => part !== null).join(' · ')
 
@@ -400,15 +467,35 @@ export const BalancePill = memo(function BalancePill({ useProjection, sessionId,
                   <dd>{webAmount(web.fetch)}</dd>
                 </>
               )}
-              {/* Delegated subagent sessions spend the same account's tokens
-                  and web calls; the host folds them into the totals above. */}
-              {hasSubagents && subagents !== undefined && (
-                <>
-                  <dt>{t('balance.dialog.subagents', { count: subagents.sessions })}</dt>
-                  <dd>{amount(subagents.total)}</dd>
-                </>
-              )}
             </dl>
+            {/* Each delegated subagent gets its own row so its token and web
+                basis is visible; the parent totals above already include it. */}
+            {hasSubagents && subagents !== undefined && (
+              <>
+                <div className={css.titleRule} aria-hidden />
+                <div className={css.subagentsTitle}>
+                  <span>{t('balance.dialog.subagents', { count: subagents.sessions })}</span>
+                  <span className={css.subagentsTotal}>{subagentAmount(subagents.total)}</span>
+                </div>
+                <div className={css.subagents} data-session-balance-subagents>
+                  <span className={css.subagentHead}>{t('balance.dialog.subagentName')}</span>
+                  <span className={`${css.subagentHead} ${css.subagentNum}`}>{t('balance.dialog.subagentToken')}</span>
+                  <span className={`${css.subagentHead} ${css.subagentNum}`}>{t('balance.dialog.subagentWeb')}</span>
+                  <span className={`${css.subagentHead} ${css.subagentNum}`}>{t('balance.dialog.subagentTotal')}</span>
+                  {subagents.items.map(item => (
+                    <Fragment key={item.id}>
+                      <span className={css.subagentName}>
+                        <span className={css.subagentLabel}>{item.label ?? item.id}</span>
+                        <span className={css.subagentMeta}>{subagentMeta(item)}</span>
+                      </span>
+                      <span className={css.subagentNum}>{subagentAmount(item.token)}</span>
+                      <span className={css.subagentNum}>{subagentWeb(item)}</span>
+                      <span className={css.subagentNum}>{subagentAmount(item.total)}</span>
+                    </Fragment>
+                  ))}
+                </div>
+              </>
+            )}
             {models.length > 0 && (
               <>
                 <div className={css.titleRule} aria-hidden />
