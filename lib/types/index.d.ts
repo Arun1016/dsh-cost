@@ -4,7 +4,9 @@
  * credentials seam, reads the official account balance from the DeepSeek API,
  * prices the current session's token usage at the official peak/off-peak rates,
  * and folds the live log per request so a session spanning the 2026-09-10 price
- * cut, the pro-to-flash routing, or a peak boundary never mixes rate tables.
+ * cut, the pro-to-flash routing, or a peak boundary never mixes rate tables,
+ * and counts the session's successful web search / web fetch requests, which
+ * the official price table bills per request from 2026-11-01 00:00 Beijing.
  *
  * Price, period, and statutory-holiday facts live here, in the owning package:
  * an official change is one edit plus its tests.
@@ -65,6 +67,20 @@ export interface SessionModelCost {
     /** Usage-carrying steps attributed to this model. */
     requests: number;
 }
+/** One web API's billable call count and amount for a session. */
+export interface SessionWebApiCost {
+    /** Successful requests; a multi-query `web_search` counts one per query. */
+    calls: number;
+    /** Billed amount in CNY (0 for requests inside the free period). */
+    amount: number;
+}
+/** Search and Fetch call costs folded from a session's tool log, in CNY. */
+export interface SessionWebCost {
+    /** Successful Search API requests, one per query that returned results. */
+    search: SessionWebApiCost;
+    /** Successful Fetch API requests that returned page content. */
+    fetch: SessionWebApiCost;
+}
 /** The wire value the client expects for this session's accumulated cost. */
 export interface SessionCost {
     /** Total billed amount in CNY (yuan). */
@@ -77,6 +93,8 @@ export interface SessionCost {
     buckets: SessionCostBuckets;
     /** `total` split by model, most expensive first. */
     models: SessionModelCost[];
+    /** `total`'s Search and Fetch call share, priced per successful request. */
+    web: SessionWebCost;
 }
 /** Price facts plus the current billing period, sent to the stats strip. */
 export interface BalancePrices {
@@ -159,17 +177,46 @@ export declare function pricesAt(model: string, timeMs: number, holidays?: Reado
  */
 export declare function canonicalModel(model: string): string;
 /**
+ * The amount one successful Search or Fetch request billed when it ran: ¥0.005
+ * from 2026-11-01 00:00 Beijing, and nothing before then — the official notice
+ * leaves earlier Harness tool calls in a free period.
+ * @param timeMs - when the request's result landed (Unix milliseconds).
+ * @returns the request's price in CNY.
+ */
+export declare function webCallPriceYuan(timeMs: number): number;
+/**
+ * The distinct queries a `web_search` call issued, parsed from its JSON
+ * arguments. The tool collapses exact duplicates before dispatching, so the
+ * first-occurrence set here matches the number of Search API requests.
+ * @param raw - the `tool/call` event's `arguments` string.
+ * @returns the distinct queries; empty when the arguments are malformed.
+ */
+export declare function webSearchQueries(raw: unknown): string[];
+/**
+ * Fold a live session's successful Search and Fetch requests. One `web_search`
+ * tool call issues one Search API request per distinct query; a search that
+ * returned no results produced no billable request, and a failed tool call
+ * bills nothing. One `web_fetch` call issues one Fetch API request and bills
+ * when the page came back. Each request is priced at its own result moment, so
+ * a session spanning the 2026-11-01 billing start bills only its later calls.
+ * @param session - the live session whose log is folded.
+ * @returns billable call counts and amounts per API; both zero without web calls.
+ */
+export declare function foldSessionWebCost(session: Session): SessionWebCost;
+/**
  * Fold a live session's log into per-model accumulated cost. Each
  * `assistant/message` event pairs its model id (from the message source) with
  * the usage the adapter reported on that step, and bills it at the rates of
  * that event's own moment — a session spanning the 2026-09-10 price cut, a
  * peak-window boundary, or the pro-to-flash routing never mixes rate tables.
- * Events without usage, and messages without a model source, are skipped.
+ * Events without usage, and messages without a model source, are skipped. The
+ * session's successful Search and Fetch requests are folded in as well, priced
+ * per request at their own result moment.
  * @param session - the live session whose log is folded.
  * @param holidays - statutory-holiday date keys billed off-peak all day.
- * @returns the summed cost with its bucket and per-model splits, the number of
- *   usage-carrying steps, and the last model seen — or undefined when no step
- *   reported usage.
+ * @returns the summed cost with its bucket, per-model and web-call splits, the
+ *   number of usage-carrying steps, and the last model seen — or undefined when
+ *   the session has neither token usage nor web calls.
  */
 export declare function foldSessionCost(session: Session, holidays?: ReadonlySet<string>): SessionCost | undefined;
 /** Parse a DeepSeek balance response into the client's account row. */
@@ -188,7 +235,7 @@ export interface BalanceResponse {
     balance_infos?: BalanceInfo[];
     /** The billing prices in effect right now. */
     prices: BalancePrices;
-    /** Accumulated session cost; absent when the session has no token usage. */
+    /** Accumulated session cost; absent when the session has neither token usage nor web calls. */
     sessionCost?: SessionCost;
 }
 /**

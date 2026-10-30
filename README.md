@@ -1,6 +1,6 @@
 # dsh-cost
 
-**Account balance and cost statistics** pill for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It adds a pill at the right-hand end of the official stats row below the session composer, combining three readings: the billing period (peak / off-peak, colour-coded), the account balance, and the current session cost. Clicking the pill expands a per-session breakdown — cache-hit input, cache-miss input and output amounts, plus cost per model. The cost side needs no credentials; the balance side needs a DeepSeek API key.
+**Account balance and cost statistics** pill for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It adds a pill at the right-hand end of the official stats row below the session composer, combining three readings: the billing period (peak / off-peak, colour-coded), the account balance, and the current session cost. Clicking the pill expands a per-session breakdown — cache-hit input, cache-miss input and output amounts, cost per model, and, when the session used them, the successful web search / web fetch call counts and their per-request fee (billed from 2026-11-01). The cost side needs no credentials; the balance side needs a DeepSeek API key.
 
 > Community plugin. Not affiliated with, endorsed by, or shipped by DeepSeek.
 
@@ -13,13 +13,13 @@
 ## Features
 
 - **Rightmost pill in the stats row**: registers into `conversation.composer.dock` with `order: 2`, after both official stats pills (`activity` = 0, `usage` = 1). The period reads `Peak` or `Off-peak`, and a red / green dot distinguishes them.
-- **Popup breakdown**: billing period, account balance, current session cost, and the cost split by bucket — cache-hit input, cache-miss input (cache writes included), output — plus a per-model breakdown whenever the host can fold one.
-- **Official pricing**: the 2026-09-10 price cut and the pro→flash routing are both modelled. While the session is attached, usage is folded per request, so a session spanning a price change, a routing change or a peak boundary never mixes two rate tables.
+- **Popup breakdown**: billing period, account balance, current session cost, the cost split by bucket — cache-hit input, cache-miss input (cache writes included), output — a per-model breakdown whenever the host can fold one, and the session's successful web search / web fetch call counts and fee when it made such calls.
+- **Official pricing**: the 2026-09-10 price cut and the pro→flash routing are both modelled. While the session is attached, usage is folded per request, so a session spanning a price change, a routing change or a peak boundary never mixes two rate tables. The Search / Fetch call fee follows the official 2026-10-17 notice: ¥5 per 1,000 successful requests (¥0.005 each), with failures, empty searches and timeouts free, billed for DeepSeek Harness server-side tool calls from 2026-11-01 00:00 Beijing on; the plugin prices each call at its own moment and shows calls inside the free period as "Free".
 - **Peak / off-peak clock**: workday windows `09:00–12:00` and `14:00–18:00`; everything else, weekends and statutory holidays bill off-peak all day (including a weekend that holiday adjustment turns into a workday). The built-in 2026 PRC holiday table can be replaced through `Config.holidays`.
 - **Rates follow official pricing**: the rate table ships inside the plugin and is refreshed with plugin releases.
 - **Works without an API key**: installs signed in with a DeepSeek account still see the billing period and the session cost; only the balance is absent.
 - **No credentials stored**: the key is resolved through dsh's credentials seam, used in-process, and never written to disk.
-- **Bilingual**: 14 dictionary entries under the `cost-stats` namespace, Chinese and English, following the app locale.
+- **Bilingual**: 17 dictionary entries under the `cost-stats` namespace, Chinese and English, following the app locale.
 - **Host route only**: the browser half reads the host route `/api/dsh-balance` (once per session step plus a 60 s poll) and never contacts a third party.
 - **No local state**: nothing is persisted; uninstalling leaves no data behind.
 - **Native behaviour**: positioning and outside-dismiss reuse the official `ui-primitives` helpers (`useAnchoredPosition`, `useDismissOnOutsidePointer`).
@@ -54,7 +54,7 @@ You can also install from the GitHub source: `dsh plugin --profile <profile> add
 
 ## Billing model
 
-Prices are CNY per million tokens, and every figure below is a **peak** rate — off-peak is exactly half, per the official rule.
+Model prices are CNY per million tokens, and every figure below is a **peak** rate — off-peak is exactly half, per the official rule. Search and Fetch are billed per request instead, listed at the end of the table.
 
 | Item | Rule |
 |---|---|
@@ -67,6 +67,12 @@ Prices are CNY per million tokens, and every figure below is a **peak** rate —
 | pro→flash routing | billed as Flash from 2026-09-14 12:00 Beijing |
 | `inputTokens` | uncached input; cache writes bill at the uncached rate |
 | reasoning | subset of output, not billed separately |
+| Search / Fetch calls | ¥5 per 1,000 successful requests (¥0.005 each), independent of the peak / off-peak window |
+| Web billing start | 2026-11-01 00:00 Beijing; earlier successful calls cost nothing and display as "Free" |
+| Successful call | Search returned a non-empty `results` array; Fetch returned page content; failures, empty searches and timeouts are free |
+| Call counting | the session log's `web_search` / `web_fetch` tool calls; one multi-query `web_search` counts its distinct queries |
+
+The Search / Fetch price and billing start come from the official [price page](https://api-docs.deepseek.com/zh-cn/quick_start/pricing) and the [web search & fetch guide](https://api-docs.deepseek.com/zh-cn/guides/search) (announced 2026-10-17).
 
 ## Privacy
 
@@ -78,6 +84,9 @@ Prices are CNY per million tokens, and every figure below is a **peak** rate —
 ## Known limitations
 
 - While the session is attached the host folds usage per request, so a span across the price cut, the routing change or a peak boundary keeps its own rate table. A **detached** session is priced by the host as one aggregate at the current Flash rates and carries **no** estimate marker; the browser half's own fallback estimate uses the same current rates and is marked `(估)` in Chinese / `(est)` in English.
+- Web search / fetch fees are inferred from the session log's `web_search` / `web_fetch` tool calls: the host does not load a detached session's log and keeps no per-query results, so **detached sessions** and the **local fallback estimate** omit this fee; a log trimmed by compaction undercounts too.
+- A multi-query `web_search` whose queries partly return nothing cannot be split after the results are merged, so every distinct query is billed (an overcount); a failed call bills nothing, but sibling requests that had already succeeded in the same batch cannot be counted (an undercount).
+- Calls are counted by tool name, not by the underlying provider. The shipped profile uses DeepSeek's Search / Fetch APIs, where this matches the official bill; with a different search or fetch provider the plugin still counts the calls and would show uncounted calls as billed.
 - Every reading is conditional: a missing balance hides only that segment; a cost of exactly `¥0.00` hides the cost segment; and when the host route is missing or errors, the whole pill disappears silently, with no placeholder and no error message. After a failure it stops per-step polling and keeps only the 60 s poll.
 - Amounts always print with a `¥` prefix, regardless of the account currency the API reports. Balance uses 2 decimals; costs use 2 decimals, or 4 below `¥0.01`.
 - The per-model breakdown appears only when the host can fold the session by model, and model ids are normalised (for example `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` both display as `deepseek-flash`).
@@ -85,7 +94,7 @@ Prices are CNY per million tokens, and every figure below is a **peak** rate —
 - The balance cache is process-wide and shared across sessions; it is only invalidated by a different key, so a top-up can take up to 30 s to appear.
 - Model ids the plugin does not recognise are priced with the Flash table.
 - Costs accumulate per request, so rounding may differ from the account ledger.
-- Events without a model source or usage are skipped.
+- Events without a model source or usage are skipped for token cost; web calls are folded separately from their own events.
 - The popup has no height cap and does not share the official pills' mutual-exclusion state, so it can stay open alongside another popup.
 - The built-in holiday table covers 2026 only.
 

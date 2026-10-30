@@ -14,12 +14,14 @@ import {
   apply,
   canonicalModel,
   foldSessionCost,
+  foldSessionWebCost,
   isPeakPeriod,
   parseBalanceInfo,
   peakPricesAt,
   pricesAt,
   pricesFor,
   sessionCostYuan,
+  webCallPriceYuan,
   type ModelPrices,
 } from '../src/index.ts'
 
@@ -239,6 +241,126 @@ describe('foldSessionCost', () => {
       },
     } as never, { surfaceOp: 'append' })
     expect(foldSessionCost(session)).toBeUndefined()
+    await ctx.fiber.dispose()
+  })
+})
+
+describe('webCallPriceYuan', () => {
+  it('bills nothing inside the free period before 2026-11-01 00:00 Beijing', () => {
+    expect(webCallPriceYuan(Date.parse('2026-10-31T23:59:59+08:00'))).toBe(0)
+  })
+
+  it('bills ¥5 per 1,000 successful requests from the official start', () => {
+    expect(webCallPriceYuan(Date.parse('2026-11-01T00:00:00+08:00'))).toBeCloseTo(0.005, 9)
+    expect(webCallPriceYuan(Date.parse('2026-11-02T10:00:00+08:00'))).toBeCloseTo(0.005, 9)
+  })
+})
+
+describe('foldSessionWebCost', () => {
+  interface WebEvent {
+    name: 'web_search' | 'web_fetch'
+    arguments?: unknown
+    text?: string
+    isError?: boolean
+  }
+
+  function appendWebCall(session: Session, call: WebEvent, callId: string): void {
+    session.append('tool/call', {
+      turn: 1,
+      step: 1,
+      callId,
+      name: call.name,
+      arguments: JSON.stringify(call.arguments ?? {}),
+    } as never, { surfaceOp: 'append' })
+    session.append('tool/result', {
+      turn: 1,
+      step: 1,
+      message: {
+        id: `tool-${callId}`,
+        role: 'tool',
+        source: { kind: 'tool', callId },
+        toolCallId: callId,
+        content: [{ type: 'text', text: call.text ?? '' }],
+        isError: call.isError ?? false,
+      },
+    } as never, { surfaceOp: 'append' })
+  }
+
+  async function sessionWithWeb(events: WebEvent[]): Promise<Session> {
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    const session = ctx.sessions.create(SessionId(`web-${Math.random()}`))
+    events.forEach((event, index) => { appendWebCall(session, event, `call-${index}`) })
+    return session
+  }
+
+  function resultPrice(session: Session): number {
+    const time = session.snapshotEvents().find(event => event.type === 'tool/result')!.time
+    return webCallPriceYuan(time)
+  }
+
+  it('counts one Search request per distinct query', async () => {
+    const session = await sessionWithWeb([{
+      name: 'web_search',
+      arguments: { queries: ['alpha', 'beta', 'alpha'] },
+      text: 'Sources:\n- [Alpha](https://a.example)',
+    }])
+    const cost = foldSessionWebCost(session)
+    expect(cost.search.calls).toBe(2)
+    expect(cost.search.amount).toBeCloseTo(2 * resultPrice(session), 9)
+    expect(cost.fetch.calls).toBe(0)
+  })
+
+  it('does not bill an empty search or a failed call', async () => {
+    const session = await sessionWithWeb([
+      { name: 'web_search', arguments: { queries: ['nothing'] }, text: 'No results found.' },
+      { name: 'web_search', arguments: { queries: ['boom'] }, text: 'Error', isError: true },
+      { name: 'web_fetch', arguments: { url: 'https://a.example' }, text: 'Error', isError: true },
+    ])
+    const cost = foldSessionWebCost(session)
+    expect(cost.search).toEqual({ calls: 0, amount: 0 })
+    expect(cost.fetch).toEqual({ calls: 0, amount: 0 })
+  })
+
+  it('counts each successful Fetch request', async () => {
+    const session = await sessionWithWeb([
+      { name: 'web_fetch', arguments: { url: 'https://a.example' }, text: 'Fetched https://a.example (HTTP 200)' },
+      { name: 'web_fetch', arguments: { url: 'https://b.example' }, text: 'Fetched https://b.example (HTTP 200)' },
+    ])
+    const cost = foldSessionWebCost(session)
+    expect(cost.fetch.calls).toBe(2)
+    expect(cost.fetch.amount).toBeCloseTo(2 * resultPrice(session), 9)
+  })
+
+  it('adds web fees to the session total and exposes the split', async () => {
+    const { ctx, session } = await (async () => {
+      const ctx = new Context()
+      contexts.push(ctx)
+      await ctx.plugin(SessionStore)
+      const session = ctx.sessions.create(SessionId('web-total'))
+      session.append('assistant/message', {
+        turn: 1,
+        step: 1,
+        message: {
+          id: 'm-web-total',
+          role: 'assistant',
+          content: [{ type: 'text', text: 'hi' }],
+          source: { kind: 'model', provider: 'deepseek-official', model: 'deepseek-flash' },
+        },
+        usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
+      } as never, { surfaceOp: 'append' })
+      appendWebCall(session, {
+        name: 'web_search',
+        arguments: { queries: ['alpha'] },
+        text: 'Sources:\n- [Alpha](https://a.example)',
+      }, 'total-call')
+      return { ctx, session }
+    })()
+    const result = foldSessionCost(session)
+    expect(result?.web.search.calls).toBe(1)
+    const tokenTotal = (result?.models ?? []).reduce((sum, row) => sum + row.total, 0)
+    expect(result?.total).toBeCloseTo((result?.web.search.amount ?? 0) + tokenTotal, 9)
     await ctx.fiber.dispose()
   })
 })

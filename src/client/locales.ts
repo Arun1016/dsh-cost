@@ -23,6 +23,9 @@ export const zh = {
   'balance.dialog.cacheRead': '输入（缓存命中）',
   'balance.dialog.uncachedInput': '输入（缓存未命中）',
   'balance.dialog.output': '输出',
+  'balance.dialog.webSearch': '网页搜索（{count} 次）',
+  'balance.dialog.webFetch': '网页抓取（{count} 次）',
+  'balance.dialog.webFree': '免费',
   'balance.dialog.models': '各模型（本会话）',
 }
 
@@ -41,6 +44,9 @@ export const en = {
   'balance.dialog.cacheRead': 'Input (cache hit)',
   'balance.dialog.uncachedInput': 'Input (cache miss)',
   'balance.dialog.output': 'Output',
+  'balance.dialog.webSearch': 'Web search ({count})',
+  'balance.dialog.webFetch': 'Web fetch ({count})',
+  'balance.dialog.webFree': 'Free',
   'balance.dialog.models': 'By model (this session)',
 }
 

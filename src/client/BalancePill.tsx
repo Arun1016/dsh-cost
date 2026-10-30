@@ -56,6 +56,18 @@ interface ModelCost {
   total: number
 }
 
+/** One web API's billable calls and amount for this session. */
+interface WebApiCost {
+  calls: number
+  amount: number
+}
+
+/** Search and Fetch call costs folded by the host. */
+interface WebCost {
+  search: WebApiCost
+  fetch: WebApiCost
+}
+
 /** The fields this pill reads from `/api/dsh-balance`. */
 interface BalanceState {
   /** Account balance as the API reported it. */
@@ -72,6 +84,8 @@ interface BalanceState {
   buckets?: CostBuckets
   /** Per-model cost, most expensive first; empty for a cold session. */
   models?: ModelCost[]
+  /** Search/Fetch call cost folded by the host; absent without a fold. */
+  web?: WebCost
 }
 
 /**
@@ -166,6 +180,10 @@ export const BalancePill = memo(function BalancePill({ useProjection, sessionId,
             total?: unknown
             buckets?: { cacheRead?: unknown; uncachedInput?: unknown; output?: unknown }
             models?: { model?: unknown; total?: unknown }[]
+            web?: {
+              search?: { calls?: unknown; amount?: unknown }
+              fetch?: { calls?: unknown; amount?: unknown }
+            }
           }
         }
         if (!alive) return
@@ -196,6 +214,14 @@ export const BalancePill = memo(function BalancePill({ useProjection, sessionId,
               : []
           ))
           : undefined
+        const rawWeb = data.sessionCost?.web
+        const webApi = (api: { calls?: unknown; amount?: unknown } | undefined): WebApiCost => ({
+          calls: Number(api?.calls ?? 0),
+          amount: Number(api?.amount ?? 0),
+        })
+        const parsedWeb = rawWeb === undefined
+          ? undefined
+          : { search: webApi(rawWeb.search), fetch: webApi(rawWeb.fetch) }
         setBalance({
           ...(info === undefined ? {} : { total: String(info.total_balance) }),
           ...(parsedPrices === undefined ? {} : { prices: parsedPrices }),
@@ -205,6 +231,7 @@ export const BalancePill = memo(function BalancePill({ useProjection, sessionId,
             : {}),
           ...(parsedBuckets === undefined ? {} : { buckets: parsedBuckets }),
           ...(parsedModels === undefined ? {} : { models: parsedModels }),
+          ...(parsedWeb === undefined ? {} : { web: parsedWeb }),
         })
       } catch (error) {
         if (alive) setBalance({ error: String(error) })
@@ -231,18 +258,26 @@ export const BalancePill = memo(function BalancePill({ useProjection, sessionId,
     : t('balance.account', { amount: Number(balance.total).toFixed(2) })
   const exact = balance.sessionCost
   // Host-folded cost first; a session the host cannot see is estimated locally
-  // at the rates the route reported.
+  // at the rates the route reported. The host total already includes the
+  // Search / Fetch call fee; the local estimate cannot know the call counts.
   const cost = exact ?? sessionCost(usage, balance.prices)
+  const web = balance.web ?? { search: { calls: 0, amount: 0 }, fetch: { calls: 0, amount: 0 } }
+  const webCalls = web.search.calls + web.fetch.calls
   const costText = cost > 0
     ? (exact !== undefined
       ? t('balance.sessionCost', { amount: formatAmount(cost) })
       : t('balance.sessionCostEst', { amount: formatAmount(cost) }))
     : null
-  if (periodText === null && balanceText === null && costText === null) return null
+  if (periodText === null && balanceText === null && costText === null && webCalls === 0) return null
 
   const buckets = balance.buckets ?? bucketCost(usage, balance.prices)
   const models = balance.models ?? []
   const amount = (yuan: number): string => t('balance.amount', { amount: formatAmount(yuan) })
+  // Calls inside the official free period (before 2026-11-01 00:00 Beijing)
+  // count but read as free rather than as an oddly rounded ¥0.00.
+  const webAmount = (api: WebApiCost): string => api.calls > 0 && api.amount === 0
+    ? t('balance.dialog.webFree')
+    : amount(api.amount)
   const separator = <span className={css.sep} aria-hidden>·</span>
   const labelText = [periodText, balanceText, costText].filter(part => part !== null).join(' · ')
 
@@ -300,10 +335,10 @@ export const BalancePill = memo(function BalancePill({ useProjection, sessionId,
                   <dd>{balanceText}</dd>
                 </>
               )}
-              {costText !== null && (
+              {(costText !== null || webCalls > 0) && (
                 <>
                   <dt>{t('balance.dialog.sessionCost')}</dt>
-                  <dd>{costText}</dd>
+                  <dd>{costText ?? t('balance.sessionCost', { amount: formatAmount(cost) })}</dd>
                 </>
               )}
               {costText !== null && (
@@ -314,6 +349,20 @@ export const BalancePill = memo(function BalancePill({ useProjection, sessionId,
                   <dd>{amount(buckets.uncachedInput)}</dd>
                   <dt>{t('balance.dialog.output')}</dt>
                   <dd>{amount(buckets.output)}</dd>
+                </>
+              )}
+              {/* Search / Fetch requests are billed per successful call; the
+                  rows appear only for a session that made such calls. */}
+              {web.search.calls > 0 && (
+                <>
+                  <dt>{t('balance.dialog.webSearch', { count: web.search.calls })}</dt>
+                  <dd>{webAmount(web.search)}</dd>
+                </>
+              )}
+              {web.fetch.calls > 0 && (
+                <>
+                  <dt>{t('balance.dialog.webFetch', { count: web.fetch.calls })}</dt>
+                  <dd>{webAmount(web.fetch)}</dd>
                 </>
               )}
             </dl>

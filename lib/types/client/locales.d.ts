@@ -21,6 +21,9 @@ export declare const zh: {
     'balance.dialog.cacheRead': string;
     'balance.dialog.uncachedInput': string;
     'balance.dialog.output': string;
+    'balance.dialog.webSearch': string;
+    'balance.dialog.webFetch': string;
+    'balance.dialog.webFree': string;
     'balance.dialog.models': string;
 };
 /** English dictionary. */
@@ -38,6 +41,9 @@ export declare const en: {
     'balance.dialog.cacheRead': string;
     'balance.dialog.uncachedInput': string;
     'balance.dialog.output': string;
+    'balance.dialog.webSearch': string;
+    'balance.dialog.webFetch': string;
+    'balance.dialog.webFree': string;
     'balance.dialog.models': string;
 };
 /** Every dictionary key this plugin owns. */

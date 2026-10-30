@@ -3,8 +3,10 @@
  * composer-dock pill polls. The route resolves the DeepSeek API key through the
  * credentials seam, reads the official account balance from the DeepSeek API,
  * prices the current session's token usage at the official peak/off-peak rates,
- * and folds the live log per request so a session spanning the 2026-09-10 price
- * cut, the pro-to-flash routing, or a peak boundary never mixes rate tables.
+ * folds the live log per request so a session spanning the 2026-09-10 price
+ * cut, the pro-to-flash routing, or a peak boundary never mixes rate tables,
+ * and counts the session's successful web search / web fetch requests, which
+ * the official price table bills per request from 2026-11-01 00:00 Beijing.
  *
  * Price, period, and statutory-holiday facts live here, in the owning package:
  * an official change is one edit plus its tests.
@@ -109,6 +111,27 @@ const FLASH_MODEL = 'deepseek-flash'
 /** The model id whose rates price a session that reports no usable model. */
 const FALLBACK_MODEL = FLASH_MODEL
 
+/**
+ * The official per-request price of a successful Search or Fetch call: the
+ * price page lists both APIs at ¥5 per 1,000 successful requests, so each
+ * request bills ¥0.005. The price does not depend on the billing period, and
+ * failures, empty searches and timeouts are not charged.
+ */
+const WEB_CALL_PRICE_YUAN = 5 / 1000
+
+/**
+ * When Search and Fetch requests started billing: 2026-11-01 00:00 Beijing,
+ * per the official announcement. Requests made before this moment were free,
+ * so a session that spans the boundary bills only its later requests.
+ */
+const WEB_CALL_BILLING_START_MS = Date.parse('2026-11-01T00:00:00+08:00')
+
+/** The model-facing tool whose per-query Search API requests bill individually. */
+const WEB_SEARCH_TOOL = 'web_search'
+
+/** The model-facing tool whose single Fetch API request bills individually. */
+const WEB_FETCH_TOOL = 'web_fetch'
+
 /** Official DeepSeek account-balance endpoint. */
 const BALANCE_URL = 'https://api.deepseek.com/user/balance'
 
@@ -146,6 +169,22 @@ export interface SessionModelCost {
   requests: number
 }
 
+/** One web API's billable call count and amount for a session. */
+export interface SessionWebApiCost {
+  /** Successful requests; a multi-query `web_search` counts one per query. */
+  calls: number
+  /** Billed amount in CNY (0 for requests inside the free period). */
+  amount: number
+}
+
+/** Search and Fetch call costs folded from a session's tool log, in CNY. */
+export interface SessionWebCost {
+  /** Successful Search API requests, one per query that returned results. */
+  search: SessionWebApiCost
+  /** Successful Fetch API requests that returned page content. */
+  fetch: SessionWebApiCost
+}
+
 /** The wire value the client expects for this session's accumulated cost. */
 export interface SessionCost {
   /** Total billed amount in CNY (yuan). */
@@ -158,6 +197,8 @@ export interface SessionCost {
   buckets: SessionCostBuckets
   /** `total` split by model, most expensive first. */
   models: SessionModelCost[]
+  /** `total`'s Search and Fetch call share, priced per successful request. */
+  web: SessionWebCost
 }
 
 /** Price facts plus the current billing period, sent to the stats strip. */
@@ -289,6 +330,120 @@ export function canonicalModel(model: string): string {
   return RETIRED_FLASH_ALIASES.has(model) ? FLASH_MODEL : model
 }
 
+/**
+ * The amount one successful Search or Fetch request billed when it ran: ¥0.005
+ * from 2026-11-01 00:00 Beijing, and nothing before then — the official notice
+ * leaves earlier Harness tool calls in a free period.
+ * @param timeMs - when the request's result landed (Unix milliseconds).
+ * @returns the request's price in CNY.
+ */
+export function webCallPriceYuan(timeMs: number): number {
+  return timeMs >= WEB_CALL_BILLING_START_MS ? WEB_CALL_PRICE_YUAN : 0
+}
+
+/** One `web_search`/`web_fetch` call recorded in a session log. */
+interface WebToolCall {
+  /** Tool name: `web_search` or `web_fetch`. */
+  name: string
+  /** Distinct queries a `web_search` call issued; empty for `web_fetch`. */
+  queries: string[]
+}
+
+/** The session-log event fields the web fold reads. */
+interface WebLogEvent {
+  type: string
+  time: number
+  data: unknown
+}
+
+/**
+ * The distinct queries a `web_search` call issued, parsed from its JSON
+ * arguments. The tool collapses exact duplicates before dispatching, so the
+ * first-occurrence set here matches the number of Search API requests.
+ * @param raw - the `tool/call` event's `arguments` string.
+ * @returns the distinct queries; empty when the arguments are malformed.
+ */
+export function webSearchQueries(raw: unknown): string[] {
+  if (typeof raw !== 'string') return []
+  try {
+    const parsed = JSON.parse(raw) as { queries?: unknown }
+    if (!Array.isArray(parsed.queries)) return []
+    return [...new Set(parsed.queries.filter((query): query is string => typeof query === 'string'))]
+  } catch {
+    return []
+  }
+}
+
+/**
+ * The joined text blocks of a tool result message. Only the empty-search marker
+ * matters here; a result the log no longer carries any text for is treated as
+ * a normal success (the request did return).
+ * @param message - the `tool/result` event's message.
+ * @returns the result text, empty when the message carries none.
+ */
+function toolResultText(message: { content?: unknown }): string {
+  if (!Array.isArray(message.content)) return ''
+  const parts: string[] = []
+  for (const block of message.content) {
+    if (typeof block !== 'object' || block === null) continue
+    const { type, text } = block as { type?: unknown; text?: unknown }
+    if (type === 'text' && typeof text === 'string') parts.push(text)
+  }
+  return parts.join('\n')
+}
+
+/**
+ * Fold a live session's successful Search and Fetch requests. One `web_search`
+ * tool call issues one Search API request per distinct query; a search that
+ * returned no results produced no billable request, and a failed tool call
+ * bills nothing. One `web_fetch` call issues one Fetch API request and bills
+ * when the page came back. Each request is priced at its own result moment, so
+ * a session spanning the 2026-11-01 billing start bills only its later calls.
+ * @param session - the live session whose log is folded.
+ * @returns billable call counts and amounts per API; both zero without web calls.
+ */
+export function foldSessionWebCost(session: Session): SessionWebCost {
+  const search: SessionWebApiCost = { calls: 0, amount: 0 }
+  const fetch: SessionWebApiCost = { calls: 0, amount: 0 }
+  const calls = new Map<string, WebToolCall>()
+  for (const event of session.snapshotEvents() as unknown as WebLogEvent[]) {
+    if (event.type === 'tool/call') {
+      const data = event.data as { name?: unknown; callId?: unknown; arguments?: unknown }
+      if (typeof data.name !== 'string' || typeof data.callId !== 'string') continue
+      if (data.name !== WEB_SEARCH_TOOL && data.name !== WEB_FETCH_TOOL) continue
+      calls.set(data.callId, {
+        name: data.name,
+        queries: data.name === WEB_SEARCH_TOOL ? webSearchQueries(data.arguments) : [],
+      })
+      continue
+    }
+    if (event.type !== 'tool/result') continue
+    const message = (event.data as {
+      message?: { toolCallId?: unknown; isError?: unknown; content?: unknown }
+    }).message
+    if (message === undefined || typeof message.toolCallId !== 'string') continue
+    const call = calls.get(message.toolCallId)
+    if (call === undefined) continue
+    // A failed tool call billed nothing: the provider dispatch failed, or the
+    // call was cancelled before the request settled.
+    if (message.isError === true) continue
+    const price = webCallPriceYuan(event.time)
+    if (call.name === WEB_FETCH_TOOL) {
+      fetch.calls += 1
+      fetch.amount += price
+      continue
+    }
+    // The Search API bills only requests whose `results` array is non-empty;
+    // the tool renders that case as the literal "No results found." marker.
+    if (toolResultText(message).includes('No results found.')) continue
+    const requests = call.queries.length
+    if (requests === 0) continue
+    search.calls += requests
+    search.amount += requests * price
+  }
+  return { search, fetch }
+}
+
 /** Per-model accumulated usage and cost, keyed by model id. */
 interface ModelAccumulator {
   uncachedInputTokens: number
@@ -339,12 +494,14 @@ function accumulateUsage(
  * the usage the adapter reported on that step, and bills it at the rates of
  * that event's own moment — a session spanning the 2026-09-10 price cut, a
  * peak-window boundary, or the pro-to-flash routing never mixes rate tables.
- * Events without usage, and messages without a model source, are skipped.
+ * Events without usage, and messages without a model source, are skipped. The
+ * session's successful Search and Fetch requests are folded in as well, priced
+ * per request at their own result moment.
  * @param session - the live session whose log is folded.
  * @param holidays - statutory-holiday date keys billed off-peak all day.
- * @returns the summed cost with its bucket and per-model splits, the number of
- *   usage-carrying steps, and the last model seen — or undefined when no step
- *   reported usage.
+ * @returns the summed cost with its bucket, per-model and web-call splits, the
+ *   number of usage-carrying steps, and the last model seen — or undefined when
+ *   the session has neither token usage nor web calls.
  */
 export function foldSessionCost(session: Session, holidays: ReadonlySet<string> = DEFAULT_HOLIDAY_SET): SessionCost | undefined {
   const byModel = new Map<string, ModelAccumulator>()
@@ -373,8 +530,9 @@ export function foldSessionCost(session: Session, holidays: ReadonlySet<string> 
     accumulateUsage(event.data.usage, acc, pricesAt(model, event.time, holidays))
     lastModel = model
   }
-  if (byModel.size === 0) return undefined
-  let total = 0
+  const web = foldSessionWebCost(session)
+  if (byModel.size === 0 && web.search.calls === 0 && web.fetch.calls === 0) return undefined
+  let total = web.search.amount + web.fetch.amount
   let requests = 0
   const buckets: SessionCostBuckets = { cacheRead: 0, uncachedInput: 0, output: 0 }
   const models: SessionModelCost[] = []
@@ -388,7 +546,7 @@ export function foldSessionCost(session: Session, holidays: ReadonlySet<string> 
   }
   // Expensive model first: the popover lists the session's cost drivers up top.
   models.sort((a, b) => b.total - a.total)
-  const cost: SessionCost = { total, requests, buckets, models }
+  const cost: SessionCost = { total, requests, buckets, models, web }
   if (lastModel !== undefined) cost.lastModel = lastModel
   return cost
 }
@@ -449,7 +607,7 @@ export interface BalanceResponse {
   balance_infos?: BalanceInfo[]
   /** The billing prices in effect right now. */
   prices: BalancePrices
-  /** Accumulated session cost; absent when the session has no token usage. */
+  /** Accumulated session cost; absent when the session has neither token usage nor web calls. */
   sessionCost?: SessionCost
 }
 
@@ -581,6 +739,7 @@ export function apply(ctx: Context, config: Config = { holidays: DEFAULT_HOLIDAY
           // A cold session carries no per-model report, so the bucket split is
           // priced at today's flash rates and the model list stays empty (the
           // client renders the model section only when the host names one).
+          // Its log is not loaded either, so its web calls stay uncounted.
           response.sessionCost = {
             total: cost,
             requests: 1,
@@ -590,6 +749,10 @@ export function apply(ctx: Context, config: Config = { holidays: DEFAULT_HOLIDAY
               output: usage.outputTokens * prices.output / 1_000_000,
             },
             models: [],
+            web: {
+              search: { calls: 0, amount: 0 },
+              fetch: { calls: 0, amount: 0 },
+            },
           }
         }
       }
