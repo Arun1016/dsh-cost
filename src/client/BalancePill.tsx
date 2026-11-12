@@ -7,17 +7,17 @@
  * and when the session is not attached it falls back to a local estimate over
  * the token-usage projection, marked "(est)".
  *
- * The dialog reuses the ui-primitives anchoring and outside-dismiss helpers the
- * official stat pills use, so its placement and dismissal match them; it cannot
- * share their exclusive-open state, which lives inside ui-chat.
+ * The dialog follows the official stat pills' CSS Anchor Positioning seat
+ * (anchor-name on the trigger, position-anchor on the portaled panel): DSH
+ * 0.2.2 removed the former `useAnchoredPosition` helper, so placement is owned
+ * by the stylesheet. Outside-dismiss still uses the shared ui-primitives hook.
  * @module dsh-cost-pill/client/BalancePill
  */
 
-import { Fragment, memo, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { Fragment, memo, useEffect, useId, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import {
   IconDataOutlineRegular,
-  useAnchoredPosition,
   useDismissOnOutsidePointer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -33,15 +33,6 @@ export type BalancePillProps = PropsRuntime<'conversation.composer.dock'> & Prop
 
 /** Fallback unit prices (CNY per million tokens; flash peak from 2026-09-10). */
 const FALLBACK_PRICES = { input: 2.0, cacheRead: 0.04, output: 8.0 }
-
-/** Viewport margin the placement clamp keeps (mirrors the official panel). */
-const PANEL_MARGIN = 12
-
-/** Distance between the trigger's top edge and the panel's bottom. */
-const PANEL_GAP = 8
-
-/** Unplaced portal panel: hidden but laid out so the clamp measures it. */
-const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
 
 /** The three billed buckets in CNY. */
 interface CostBuckets {
@@ -160,23 +151,32 @@ export const BalancePill = memo(function BalancePill({ useProjection, sessionId,
   const rootRef = useRef<HTMLSpanElement | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
 
-  // Placement and dismissal follow the official stat pills' seat.
-  const pos = useAnchoredPosition({
-    open,
-    anchorRef: rootRef,
-    panelRef,
-    side: 'top',
-    gap: PANEL_GAP,
-    margin: PANEL_MARGIN,
-  })
+  // CSS Anchor Positioning identity shared by the trigger and the portaled
+  // panel. DSH 0.2.2 removed useAnchoredPosition, so placement lives in the
+  // stylesheet (same pattern as ui-chat's own stat pills).
+  const anchorName = `--dsh-cost-${useId().replaceAll(':', '')}`
+
   useDismissOnOutsidePointer(rootRef, open, setOpen, panelRef)
   useEffect(() => {
     if (!open) return
     const onKeyDown = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') setOpen(false)
     }
+    const onClick = (e: MouseEvent): void => {
+      // Keyboard activation of a sibling trigger fires click without
+      // pointerdown; close here before the sibling opens its own dialog.
+      if (e.target instanceof Node
+        && rootRef.current?.contains(e.target) !== true
+        && panelRef.current?.contains(e.target) !== true) {
+        setOpen(false)
+      }
+    }
     document.addEventListener('keydown', onKeyDown)
-    return () => { document.removeEventListener('keydown', onKeyDown) }
+    document.addEventListener('click', onClick, true)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('click', onClick, true)
+    }
   }, [open])
 
   // Each step is the cheapest signal that another request happened; the host
@@ -318,7 +318,7 @@ export const BalancePill = memo(function BalancePill({ useProjection, sessionId,
   const labelText = [periodText, balanceText, costText].filter(part => part !== null).join(' · ')
 
   return (
-    <span ref={rootRef} className={css.anchor}>
+    <span ref={rootRef} className={css.anchor} style={{ anchorName } as CSSProperties}>
       <button
         type="button"
         className={css.pill}
@@ -349,7 +349,7 @@ export const BalancePill = memo(function BalancePill({ useProjection, sessionId,
             className={css.panel}
             role="dialog"
             aria-label={t('balance.dialog.title')}
-            style={pos ?? MEASURE_STYLE}
+            style={{ positionAnchor: anchorName } as CSSProperties}
           >
             <div className={css.title}>
               <span className={css.titleLabel}>

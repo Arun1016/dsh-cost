@@ -88,7 +88,9 @@
 }
 
 /* Panel skin copied from ui-chat's stat-dialog.module.css so this pill's dialog
-   matches the official stat pills' surface exactly. */
+   matches the official stat pills' surface exactly. DSH 0.2.2 removed the
+   JavaScript positioner; the panel follows its trigger through CSS Anchor
+   Positioning (anchor-name is set on the trigger, position-anchor here). */
 .panel {
   position: fixed;
   z-index: 1100;
@@ -96,6 +98,22 @@
   width: max-content;
   min-width: min(300px, calc(100vw - 24px));
   max-width: min(440px, calc(100vw - 24px));
+  max-height: calc(100dvh - 12px - max(12px, var(--dsh-frame-overlay-top, 12px)));
+  overflow-x: hidden;
+  overflow-y: auto;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+  position-area: none;
+  top: max(12px, var(--dsh-frame-overlay-top, 12px));
+  bottom: max(12px, calc(anchor(top) + 8px));
+  left: max(12px, anchor(left));
+  right: 12px;
+  position-try-fallbacks: --dsh-cost-window, --dsh-cost-opposite, --dsh-cost-wide-opposite, --dsh-cost-tall, --dsh-cost-viewport;
+  align-self: end;
+  justify-self: start;
+  height: fit-content;
+  min-height: 0;
+  margin: 0;
   padding: 16px;
   border: 0;
   border-radius: 12px;
@@ -158,4 +176,51 @@
 
 .details .route {
   overflow-wrap: anywhere;
+}
+
+/* Fallback placements for the anchored panel, mirroring ui-chat's stat-dialog
+   position-try rules under this plugin's own names. */
+@position-try --dsh-cost-window {
+  position-area: none;
+  top: max(12px, var(--dsh-frame-overlay-top, 12px));
+  bottom: max(12px, calc(anchor(top) + 8px));
+  left: 12px;
+  right: 12px;
+  margin: 0;
+  align-self: safe end;
+  justify-self: safe end;
+}
+
+@position-try --dsh-cost-opposite {
+  top: max(12px, calc(anchor(bottom) + 8px));
+  bottom: 12px;
+  align-self: start;
+}
+
+@position-try --dsh-cost-wide-opposite {
+  top: max(12px, calc(anchor(bottom) + 8px));
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  align-self: start;
+  justify-self: safe end;
+}
+
+@position-try --dsh-cost-tall {
+  position-area: none;
+  top: max(12px, var(--dsh-frame-overlay-top, 12px));
+  bottom: 12px;
+  left: max(12px, anchor(left));
+  right: 12px;
+  margin: 0;
+  align-self: safe start;
+  justify-self: start;
+}
+
+@position-try --dsh-cost-viewport {
+  position-area: none;
+  inset: max(12px, var(--dsh-frame-overlay-top, 12px)) 12px 12px;
+  margin: 0;
+  align-self: safe start;
+  justify-self: safe end;
 }

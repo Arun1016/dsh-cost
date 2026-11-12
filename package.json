@@ -1,7 +1,7 @@
 {
   "name": "dsh-cost-pill",
   "description": "DeepSeek account balance and per-session cost pill for DeepSeek Harness (dsh): official peak/off-peak token pricing, web search/fetch per-request fees, subagent sessions included, per-model breakdown, no credentials stored.",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -43,7 +43,7 @@
   },
   "license": "MIT",
   "engines": {
-    "dsh": ">=0.2.1-rc.2"
+    "dsh": ">=0.2.2-rc.1"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

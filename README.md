@@ -23,11 +23,11 @@
 - **Bilingual**: 20 dictionary entries under the `cost-stats` namespace, Chinese and English, following the app locale.
 - **Host route only**: the browser half reads the host route `/api/dsh-balance` (once per session step plus a 60 s poll) and never contacts a third party.
 - **No local state**: nothing is persisted; uninstalling leaves no data behind.
-- **Native behaviour**: positioning and outside-dismiss reuse the official `ui-primitives` helpers (`useAnchoredPosition`, `useDismissOnOutsidePointer`).
+- **Native behaviour**: the dialog follows the official stat pills' CSS Anchor Positioning seat (DSH 0.2.2 removed the old JavaScript positioner; the trigger carries `anchor-name` and the panel `position-anchor`); outside-dismiss still reuses the shared `useDismissOnOutsidePointer` helper.
 
 ## Requirements
 
-- DeepSeek Harness (dsh) `>= 0.2.1-rc.2`.
+- DeepSeek Harness (dsh) `>= 0.2.2-rc.1` (0.2.2 removed `useAnchoredPosition` from `ui-primitives`; this release moves the dialog to CSS anchor positioning).
 - A DeepSeek **API key** if you want the balance. It is resolved through dsh's credentials seam; the plugin falls back to the `DEEPSEEK_API_KEY` environment variable **only when the credentials service itself is unavailable** — if credentials exists but holds no such key, the environment variable is not consulted. When no key resolves (for example an install signed in with a DeepSeek *account*), the pill keeps showing the billing period and the session cost, and only the balance is absent.
 
 ## Install
@@ -104,7 +104,7 @@ The Search / Fetch price and billing start come from the official [price page](h
 - Model ids the plugin does not recognise are priced with the Flash table.
 - Costs accumulate per request, so rounding may differ from the account ledger.
 - Events without a model source or usage are skipped for token cost; web calls are folded separately from their own events.
-- The popup has no height cap and does not share the official pills' mutual-exclusion state, so it can stay open alongside another popup.
+- The popup height is capped by the viewport and scrolls; it does not share the official pills' mutual-exclusion state, so it can stay open alongside another popup.
 - The built-in holiday table covers 2026 only.
 
 ## Development

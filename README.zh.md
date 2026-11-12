@@ -23,11 +23,11 @@ DeepSeek Harness 的**账户余额及费用统计**胶囊。它在会话输入�
 - **中英双语**：`cost-stats` 命名空间下 20 条词条，中文与英文各一套，随应用语言切换。
 - **只读宿主路由**：浏览器端只请求宿主的 `/api/dsh-balance`（每个会话步一次，另有 60 秒轮询），不访问任何第三方接口。
 - **无本地状态**：不持久化任何数据，卸载后无残留。
-- **原生交互**：弹窗定位与点击外部关闭复用官方 `ui-primitives` 的 `useAnchoredPosition` 与 `useDismissOnOutsidePointer`。
+- **原生交互**：弹窗使用与官方统计胶囊相同的 CSS Anchor Positioning（DSH 0.2.2 移除了旧的 JavaScript 定位 hook，改为触发器 `anchor-name` + 面板 `position-anchor`）；点击外部关闭复用官方 `ui-primitives` 的 `useDismissOnOutsidePointer`。
 
 ## 运行要求
 
-- DeepSeek Harness（dsh）`>= 0.2.1-rc.2`。
+- DeepSeek Harness（dsh）`>= 0.2.2-rc.1`（0.2.2 从 `ui-primitives` 移除了 `useAnchoredPosition`，本版本改用 CSS 锚点定位以适配）。
 - 想看到**账户余额**，需要一个能被 dsh 凭据服务解析到的 DeepSeek **API key**（`DEEPSEEK_API_KEY`，或经 dsh credentials 配置）。只有当凭据服务本身不可用时，插件才回退读 `DEEPSEEK_API_KEY` 环境变量；凭据服务存在但里面没有这个 key 时，不会去读环境变量。解析不到 key 时（例如只用 DeepSeek 账户登录、没配 API key），胶囊仍显示计费时段与会话费用，只是不显示余额。
 
 ## 安装
@@ -104,7 +104,7 @@ dsh plugin --profile <profile> add dsh-cost-pill
 - 插件不认识的模型 id 一律按 Flash 价目计价。
 - 按请求累加，与账户账单之间可能存在分位舍入差。
 - 事件里缺少 model source 或 usage 时，跳过该步的 token 计价；网页调用由独立的事件折算。
-- 弹窗没有高度上限，也不与官方胶囊共享互斥开合状态，可能和另一个弹窗同时开着。
+- 弹窗最大高度受视口限制并可滚动；不与官方胶囊共享互斥开合状态，可能和另一个弹窗同时开着。
 - 内建节假日表只覆盖 2026 年。
 
 ## 开发
